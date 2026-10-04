@@ -1,0 +1,15 @@
+.ai-launch { position: fixed; right: .18rem; top: .76rem; z-index: 80; }
+.ai-launch .btn { font-size: max(.14rem, 12px); min-height: 28px; }
+.ai-modal { width: min(640px, calc(100vw - 32px)); }
+.ai-modal .modal__head { padding: 16px 20px 4px; }
+.ai-modal .modal__title { font-size: max(.22rem, 18px); }
+.ai-modal .modal__body { padding: 12px 20px 20px; }
+.ai-modal .btn { font-size: max(.14rem, 12px); min-height: 34px; padding: 8px 12px; }
+.ai-assistant { display: grid; gap: 12px; font-size: max(.14rem, 12px); }
+.ai-assistant p { margin: 0; color: var(--text-lo, #9aa8a0); line-height: 1.6; }
+.ai-assistant__buttons { display: flex; flex-wrap: wrap; gap: .08rem; }
+.ai-assistant__advice { display: grid; gap: .1rem; padding: .14rem; border: 1px solid #4ed8af; }
+.ai-assistant details { border-top: 1px solid #38443d; padding-top: .12rem; }
+.ai-assistant summary { cursor: pointer; margin-bottom: .12rem; }
+.ai-assistant label { display: block; margin: .12rem 0 .06rem; }
+.ai-assistant textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 120px; max-height: 200px; padding: 10px; color: #dce8df; background: #101713; border: 1px solid #526559; font: max(.13rem, 12px)/1.5 monospace; margin-bottom: 10px; }

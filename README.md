@@ -174,6 +174,7 @@ npm start          # 启动服务器：http://localhost:3000
 | [docs/DATA.md](docs/DATA.md) | 由官方数据表生成的游戏数据（英文） |
 | [docs/ASSETS.md](docs/ASSETS.md) | 素材来源、目录结构与清单（英文） |
 | [docs/BALANCE.md](docs/BALANCE.md) | 难度模型与测量（英文） |
+| [docs/AI.md](docs/AI.md) | AI 机制分析、自定义策略接口、游戏内推荐、随机推演与多种子评测 |
 | [docs/research/](docs/research/00-INDEX.md) | 官方规则、数据与界面的调研记录 |
 
 ## 开发与测试
