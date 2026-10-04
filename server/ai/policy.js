@@ -193,6 +193,8 @@ export function* searchSteps(ctx) {
   const global = ctx.config.policy === 'global';
   const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200), lookahead = global ? 1 : 0, risk = global ? 0 : 0 } = ctx.config.search || {};
   const deadline = performance.now() + budgetMs;
+  const bossApproach = global && (o.public.round >= (o.public.bossRound || 1) - 1 || o.public.phase === 'FINAL_ASSAULT' || o.public.phase === 'HIDDEN_CORE');
+  const planningWeights = { ...(ctx.config.weights || AI_WEIGHTS), ...(bossApproach ? { bossDamage: Math.max(1, Number(ctx.config.weights?.bossDamage) || 0) } : {}) };
   const available = ctx.actions({ placements: false });
   const values = shopping ? new Map(ctx.purchaseScores().map((x) => [x.slot, x.value])) : null;
   const rank = (a) => {
@@ -214,7 +216,7 @@ export function* searchSteps(ctx) {
     for (const action of actions) {
       if (performance.now() >= deadline) { truncated = true; break; }
       const r = yield* ctx.evaluateSteps(action, {
-        sampleSeed, rounds, weights: ctx.config.weights || AI_WEIGHTS, deadline,
+        sampleSeed, rounds, weights: planningWeights, deadline,
         continuationPolicy: global && lookahead > 0 ? globalContinuation({ playerId: o.self.playerId, sampleSeed, deadline, depth: lookahead }) : null,
         continuationKey: global ? `global-l${lookahead}` : null,
       });

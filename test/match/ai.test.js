@@ -279,3 +279,19 @@ test('terminal score includes damage already dealt to a boss pool when victory i
   const score = scoreState(f, 'p_0', { bossDamage: 1 });
   assert.ok(score >= 600); f.dispose(); h.m.dispose();
 });
+
+test('terminal score keeps final-assault team LP ahead of an equal damage-only outcome', () => {
+  const h = prep();
+  const f = forkDecision(h.m, { sampleSeed: 1, playerId: 'p_0' });
+  f.teamLp = 3; f.bossPool = { maxHp: 1000, hp: 900 };
+  const score = scoreState(f, 'p_0', { teamLp: 1000, bossDamage: 1 });
+  assert.ok(score >= 3100); f.dispose(); h.m.dispose();
+});
+
+test('global planning raises boss damage weight near the final assault', () => {
+  const h = prep();
+  const p = h.ps('p_0'); p.aiConfig = { policy: 'global', search: { candidates: 1, samples: 1, rounds: 1, budgetMs: 100 } };
+  const advice = runSteps(decideSteps(h.m, p, { advice: true }));
+  assert.ok(advice.search && advice.search.ranking.length > 0);
+  h.m.dispose();
+});

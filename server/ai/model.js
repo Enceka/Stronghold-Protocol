@@ -182,7 +182,8 @@ export function scoreState(m, playerId, weights = {}) {
   const rounds = p.eliminatedRound == null ? Math.max(0, m.round - 1) : Math.max(0, p.eliminatedRound - 1);
   const core = p.aiConfig?.coreBondId && p.bonds[p.aiConfig.coreBondId];
   const bossDamage = m.bossPool ? Math.max(0, m.bossPool.maxHp - m.bossPool.hp) : 0;
-  return (victory ? w.victory : 0) + (p.alive ? w.survival : 0) + rounds * w.rounds + p.lp * w.lp + bossDamage * w.bossDamage + Object.values(p.layers).reduce((a, b) => a + b, 0) * w.layers + p.funds * w.funds
+  const teamLp = m.teamLp == null ? 0 : Math.max(0, m.teamLp);
+  return (victory ? w.victory : 0) + (p.alive ? w.survival : 0) + rounds * w.rounds + p.lp * w.lp + teamLp * w.teamLp + bossDamage * w.bossDamage + Object.values(p.layers).reduce((a, b) => a + b, 0) * w.layers + p.funds * w.funds
     + (core ? (core.count || 0) * w.coreMembers + (core.tier || 0) * w.coreTier + (core.layers || 0) * w.coreLayers : 0);
 }
 

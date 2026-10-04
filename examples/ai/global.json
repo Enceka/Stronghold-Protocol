@@ -6,6 +6,7 @@
     "survival": 10000,
     "rounds": 1000,
     "lp": 10,
+    "teamLp": 1000,
     "layers": 0.1,
     "funds": 1,
     "bossDamage": 0.25,

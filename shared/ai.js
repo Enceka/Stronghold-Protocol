@@ -1,7 +1,7 @@
 // Versioned, JSON-only AI configuration; also used by the browser before submitting.
 export const AI_VERSION = 1;
 export const AI_DEFAULT = Object.freeze({ policy: 'builtin' });
-export const AI_WEIGHTS = Object.freeze({ victory: 100000, survival: 10000, rounds: 1000, lp: 10, layers: 0.1, funds: 1, bossDamage: 0.25, coreMembers: 30, coreTier: 80, coreLayers: 0.5 });
+export const AI_WEIGHTS = Object.freeze({ victory: 100000, survival: 10000, rounds: 1000, lp: 10, teamLp: 1000, layers: 0.1, funds: 1, bossDamage: 0.25, coreMembers: 30, coreTier: 80, coreLayers: 0.5 });
 const plain = (x) => !!x && Object.getPrototypeOf(x) === Object.prototype;
 const ids = (x) => Array.isArray(x) && x.length <= 32 && x.every((s) => typeof s === 'string' && /^[\w.:-]{1,64}$/.test(s));
 
