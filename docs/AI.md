@@ -34,7 +34,7 @@
 
 本项目的 `global` 模式已经把评价目标提升到终局：共同随机样本从当前动作继续到整局结束，按胜利、存活、回合、生命、核心成员、核心档位和层数评分；下一次目标座位的决策会做有限候选比较，深度由 `search.lookahead` 控制，其他座位和更远节点使用 baseline continuation，`search.proof` 明确为 `false`。要继续逼近最优，按以下顺序扩展：
 
-1. **决策树缓存**：为脱离传输时间的 Match 副本生成稳定状态哈希，去掉 UID、动画、消息和等价手牌排列；相同状态复用价值和随机样本。当前已先实现 4096 条完成 rollout 的 transposition table，键包含可见 `modelKey`、动作、样本种子、horizon、步骤上限、权重和 continuation 标识；未完成或报错的推演不会缓存。结果中会返回 `cacheHits`、`cacheMisses` 和表大小。
+1. **决策树缓存**：为脱离传输时间的 Match 副本生成状态哈希，过滤传输消息和时钟字段；下一步还应继续归一化 UID、动画字段和等价手牌排列。当前已先实现 4096 条完成 rollout 的 transposition table，键包含可见 `modelKey`、动作、样本种子、horizon、步骤上限、权重和 continuation 标识；未完成或报错的推演不会缓存。结果中会返回 `cacheHits`、`cacheMisses` 和表大小。
 2. **分层动作生成**：购物先按核心盟约和合成对子保留候选，布阵先由路线/职业生成少量合法布局，再将装备、朝向作为局部动作；避免把所有格子动作同时放进树。
 3. **机会节点采样**：用 common random numbers 比较动作；对稀有波次、商店关键牌和会导致淘汰的事件增加采样，使用置信区间而不是单次均值。
 4. **MCTS / beam**：在根节点和未来每个决策节点继续选择动作，而不是只对根动作 rollout。UCT 或 progressive widening 控制分支，叶节点用现有 Battle 和 baseline 估值；保存访问次数、均值、方差、胜率和上下置信界。
