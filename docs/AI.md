@@ -71,7 +71,7 @@
 - `search`：先处理显式偏好，再比较 baseline 及少量选策略、机变、奖励、购物、升级或刷新动作。每阶段搜索一次，之后让原机器人完成整备与布局。
 - `global`：使用更大的候选、样本和 32 回合 horizon，把当前动作按终局综合目标比较；未来的具体决策仍由 baseline continuation 完成，因此这是全局目标的有限样本近似，不是数学最优性证明。
 
-`global` 适合离线评测或玩家主动点击获取，不会在每次商店变化时自动触发；示例配置的单次决策预算为 10 秒，完整一局可能需要数十秒到数分钟。`search.lookahead` 为 0–2，默认 1；设为 2 会把当前目标座位的两层后续决策纳入有限 beam，计算量会显著增加。
+`global` 适合离线评测或玩家主动点击获取，不会在每次商店变化时自动触发；示例配置的单次决策预算为 10 秒，完整一局可能需要数十秒到数分钟。`search.lookahead` 为 0–2，默认 1；设为 2 会把当前目标座位的两层后续决策纳入有限 beam，计算量会显著增加。`search.risk` 为 0–100；大于 0 时用最低尾部样本的 CVaR 近似评分，示例的 25 表示优先降低最差四分之一结果的风险。
 
 配置示例见 `examples/ai/preferences.json`、`examples/ai/search.json` 和 `examples/ai/global.json`。ID 来自 `data/bands.json` 的 `bandId`、`data/chess.json` 的 `chessId` 与 `data/bonds.json` 的 `bondId`，干员偏好使用普通版本 ID。界面会拒绝无效 JSON，服务器会拒绝未知 ID、非核心盟约、本局禁用盟约。
 

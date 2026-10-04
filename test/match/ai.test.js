@@ -243,3 +243,12 @@ test('completed stochastic evaluations are transposed by visible state, action a
   assert.ok(second.search.cacheHits > 0); assert.equal(h.m._aiTransposition.size, size);
   assert.ok(a); h.m.dispose();
 });
+
+test('global risk mode ranks by a lower-tail objective and exposes CVaR diagnostics', () => {
+  const h = prep();
+  h.ps('p_0').aiConfig = { policy: 'global', coreBondId: 'victoriaShip', search: { candidates: 2, samples: 2, rounds: 1, budgetMs: 2000, risk: 25 } };
+  const advice = runSteps(decideSteps(h.m, h.ps('p_0'), { advice: true }));
+  assert.equal(advice.search.objective, 'cvar-lower-tail'); assert.equal(advice.search.risk, 25);
+  assert.ok(advice.search.ranking.every((x) => Number.isFinite(x.cvar) && x.riskAdjustedScore === x.cvar));
+  h.m.dispose();
+});

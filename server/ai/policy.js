@@ -154,7 +154,7 @@ export function* searchSteps(ctx) {
   const shopping = !!coreBondId && o.public.phase === PHASE.PREP && !o.self.shop.rewardOffer;
   const coreName = coreBondId ? ctx.record('bonds', coreBondId)?.name || coreBondId : '';
   const global = ctx.config.policy === 'global';
-  const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200), lookahead = global ? 1 : 0 } = ctx.config.search || {};
+  const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200), lookahead = global ? 1 : 0, risk = global ? 0 : 0 } = ctx.config.search || {};
   const deadline = performance.now() + budgetMs;
   const available = ctx.actions({ placements: false });
   const values = shopping ? new Map(ctx.purchaseScores().map((x) => [x.slot, x.value])) : null;
@@ -191,14 +191,18 @@ export function* searchSteps(ctx) {
   }
   const ranking = completed ? actions.map((action, i) => {
     const rows = outcomes[i], score = rows.reduce((s, r) => s + r.score, 0) / completed;
+    const ordered = rows.map((r) => r.score).sort((a, b) => a - b);
+    const tailN = Math.max(1, Math.ceil(completed * Math.max(0.1, risk / 100)));
+    const cvar = ordered.slice(0, tailN).reduce((s, x) => s + x, 0) / tailN;
     const deviation = completed > 1 ? Math.sqrt(rows.reduce((s, r) => s + (r.score - score) ** 2, 0) / (completed - 1)) : 0;
     const alive = rows.filter((r) => r.alive).length;
-    return { action, score, deviation, alive, survivalRate: alive / completed, meanLp: rows.reduce((s, r) => s + r.lp, 0) / completed,
+    const riskAdjustedScore = risk > 0 ? cvar : score;
+    return { action, score, riskAdjustedScore, cvar, riskPercent: risk, deviation, alive, survivalRate: alive / completed, meanLp: rows.reduce((s, r) => s + r.lp, 0) / completed,
       terminal: rows.every((r) => r.terminal), winRate: rows.filter((r) => r.victory).length / completed };
   }) : [];
   const sufficient = completed >= (shopping ? 2 : 1);
   let best = 0;
-  if (sufficient) for (let i = 1; i < ranking.length; i++) if (ranking[i].score > ranking[best].score) best = i;
+  if (sufficient) for (let i = 1; i < ranking.length; i++) if (ranking[i].riskAdjustedScore > ranking[best].riskAdjustedScore) best = i;
   const shopRecommendations = shopping ? actions.map((a, i) => {
     const slot = o.self.shop.slots[a.slot];
     const fit = slot.kind === 'chess' ? ctx.record('chess', slot.id)?.bonds?.includes(coreBondId) : ctx.record('items', slot.id)?.giveBondId === coreBondId;
@@ -212,6 +216,6 @@ export function* searchSteps(ctx) {
       : shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
         : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
     search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, global,
-      continuation: global ? `lookahead-${lookahead}` : 'builtin', lookahead, proof: false, ranking },
+      continuation: global ? `lookahead-${lookahead}` : 'builtin', lookahead, risk, objective: risk > 0 ? 'cvar-lower-tail' : 'mean', proof: false, ranking },
   };
 }

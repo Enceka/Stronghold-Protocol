@@ -128,7 +128,7 @@ export function AIAssistant() {
           <b>${stale ? '建议已过期，请重新获取' : describeAIAction(advice.action, gd, priv)}</b>
           <p>${advice.reason}</p>
           ${!stale && advice.shopRecommendations?.length ? html`<div class="ai-comparison">
-            <p>实际完成 ${advice.search?.samples || 0}/${advice.search?.requestedSamples || 0} 个随机样本。存活比例描述接下来 ${advice.search?.rounds || 1} 回合的模拟结果。</p>
+            <p>实际完成 ${advice.search?.samples || 0}/${advice.search?.requestedSamples || 0} 个随机样本。${advice.search?.objective === 'cvar-lower-tail' ? `按最低尾部 ${advice.search?.risk || 0}% 的 CVaR 选择，降低暴毙风险。` : '按平均终局收益选择。'}存活比例描述接下来 ${advice.search?.rounds || 1} 回合的模拟结果。</p>
             <table><thead><tr><th>购买候选</th><th>平均收益</th><th>波动</th><th>存活</th></tr></thead><tbody>
               ${advice.shopRecommendations.map((r) => html`<tr key=${r.slot} class=${r.recommended ? 'is-recommended' : ''}>
                 <td>${r.recommended ? '推荐 · ' : ''}${gd.chess(r.id)?.name || gd.item(r.id)?.name || r.id}${r.coreFit ? (gd.chess(r.id) ? ' · 核心成员' : ' · 核心装备') : ''}</td>
