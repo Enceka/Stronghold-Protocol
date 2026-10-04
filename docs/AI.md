@@ -26,6 +26,23 @@
 
 默认目标优先通关、存活和推进回合，再考虑生命、羁绊层数及经济；权重允许用户调整。近期搜索只能改善它实际比较过的候选，baseline continuation 也会带来偏差。完整动作空间尤其布阵很大，在线搜索先使用少量候选；自定义模块可以扩展动作生成、beam/MCTS、风险目标或训练算法。
 
+### 要接近全局最优，需要怎样的求解器
+
+可以把一局写成带隐藏信息的随机序贯决策问题。状态包含自己的棋盘、手牌、资金、商店、盟约层数、敌人预览、队友可见棋盘、回合和剩余生命；动作是策略、机变、购买、刷新、升级、装备、移动、朝向、准备和联防选择；机会节点抽取下一次商店、波次、敌人行为和战斗随机；目标是终局胜利的概率，随后才是存活生命、核心盟约层数和资源。多人局还需要把队友策略视为另一个随机策略，隐藏手牌则是信念分布。
+
+精确解需要从当前状态枚举所有动作，在每个机会节点枚举所有随机结果，递归到终局，并用动态规划缓存 `(state, random-history)`。这个分支数会随商店、装备、布阵和 32 回合指数增长；若加入部分可见队友状态，问题是 POMDP，通常不存在可实时求出的精确全局最优。因此不能用一次较长 rollout 宣称“已经找到最优解”。
+
+本项目的 `global` 模式已经把评价目标提升到终局：共同随机样本从当前动作继续到整局结束，按胜利、存活、回合、生命、核心成员、核心档位和层数评分；它仍用 baseline continuation 处理未来玩家决策，`search.proof` 明确为 `false`。要继续逼近最优，按以下顺序扩展：
+
+1. **决策树缓存**：为脱离传输时间的 Match 副本生成稳定状态哈希，去掉 UID、动画、消息和等价手牌排列；相同状态复用价值和随机样本。
+2. **分层动作生成**：购物先按核心盟约和合成对子保留候选，布阵先由路线/职业生成少量合法布局，再将装备、朝向作为局部动作；避免把所有格子动作同时放进树。
+3. **机会节点采样**：用 common random numbers 比较动作；对稀有波次、商店关键牌和会导致淘汰的事件增加采样，使用置信区间而不是单次均值。
+4. **MCTS / beam**：在根节点和未来每个决策节点继续选择动作，而不是只对根动作 rollout。UCT 或 progressive widening 控制分支，叶节点用现有 Battle 和 baseline 估值；保存访问次数、均值、方差、胜率和上下置信界。
+5. **风险目标**：以 `P(victory)` 为第一目标，使用生命下限或 CVaR 约束，避免均值较高但尾部很容易暴毙的构筑。核心盟约目标作为次级约束，不能用无限大的拍脑袋权重替代字典序目标。
+6. **离线训练/验证**：固定种子拆分训练集与验证集，收集状态—动作—终局回报，训练价值网络或策略先验；验证必须使用没有参与搜索调参的新种子，报告置信区间和最坏分位数。
+
+只有在缩小后的确定性残局、或所有随机结果都已枚举并且上下界相等时，才可以给出“已证明最优”。完整模式更合适的产品文案是“终局目标全局规划（有限样本近似）”，而不是“保证最优通关”。
+
 ## 验收
 
 - 默认机器人回归测试通过，未配置 AI 时保留原行为。
@@ -47,13 +64,16 @@
 
 进入游戏后点击右上方「AI 助手」。可以获取下一步建议，阅读动作及理由，再点击「执行这一步」。推荐不会直接改变游戏；执行时服务器重新核对状态和原规则。自己的操作、策略轮次变化或队友布阵变化都会使旧建议失效。托管可通过「按当前配置托管」启动，通过现有「返回模拟」停止。
 
-「设计 AI：偏好与搜索配置」允许编辑 JSON，保存并应用到本局；浏览器保留配置草稿，下局需要再点保存应用。提供三种策略：
+「设计 AI：偏好与搜索配置」允许编辑 JSON，保存并应用到本局；浏览器保留配置草稿，下局需要再点保存应用。提供四种策略：
 
 - `builtin`：原来的机器人，包括其真实战斗布局排演。
 - `preferences`：优先选择 `preferredBands` 中可用的策略、购买 `preferredChess` 中可买的干员，其余委托原机器人；偏好顺序按数组先后。
 - `search`：先处理显式偏好，再比较 baseline 及少量选策略、机变、奖励、购物、升级或刷新动作。每阶段搜索一次，之后让原机器人完成整备与布局。
+- `global`：使用更大的候选、样本和 32 回合 horizon，把当前动作按终局综合目标比较；未来的具体决策仍由 baseline continuation 完成，因此这是全局目标的有限样本近似，不是数学最优性证明。
 
-配置示例见 `examples/ai/preferences.json` 和 `examples/ai/search.json`。ID 来自 `data/bands.json` 的 `bandId`、`data/chess.json` 的 `chessId` 与 `data/bonds.json` 的 `bondId`，干员偏好使用普通版本 ID。界面会拒绝无效 JSON，服务器会拒绝未知 ID、非核心盟约、本局禁用盟约。
+`global` 适合离线评测或玩家主动点击获取，不会在每次商店变化时自动触发；示例配置的单次决策预算为 10 秒，完整一局可能需要数十秒到数分钟。
+
+配置示例见 `examples/ai/preferences.json`、`examples/ai/search.json` 和 `examples/ai/global.json`。ID 来自 `data/bands.json` 的 `bandId`、`data/chess.json` 的 `chessId` 与 `data/bonds.json` 的 `bondId`，干员偏好使用普通版本 ID。界面会拒绝无效 JSON，服务器会拒绝未知 ID、非核心盟约、本局禁用盟约。
 
 ```json
 {
@@ -66,7 +86,7 @@
 }
 ```
 
-搜索参数范围：`candidates` 1–16，`samples` 1–16，`rounds` 1–32，`budgetMs` 10–10000。普通决策在线默认 200 ms；指定核心盟约的商店搜索默认 5000 ms，评测示例为 1000 ms。32 回合的 horizon 可以把当前决策推演到游戏结束，但会更容易耗尽预算。权重均需非负，最大 1e6；这里是加权目标，不是严格的字典序最优。
+搜索参数范围：`candidates` 1–16，`samples` 1–64，`rounds` 1–32，`budgetMs` 10–10000。普通决策在线默认 200 ms；指定核心盟约的商店搜索默认 5000 ms，评测示例为 1000 ms。32 回合的 horizon 可以把当前决策推演到游戏结束，但会更容易耗尽预算。权重均需非负，最大 1e6；这里是加权目标，不是严格的字典序最优。
 
 ## 自定义 JavaScript 策略
 
@@ -124,6 +144,8 @@ await startServer({ port: 3000, aiPolicy: decide });
 node tools/matchrun.mjs --mode solo --difficulty ALL --seed 1 --seeds 5 --rehearsal 3 --ai builtin --check --json
 # JSON 搜索配置
 node tools/matchrun.mjs --mode solo --difficulty ALL --seed 1 --seeds 5 --rehearsal 3 --ai-config examples/ai/search.json --check --json
+# 全局目标近似（终局 horizon；需要更长计算时间）
+node tools/matchrun.mjs --mode solo --difficulty HARD --seed 1 --seeds 3 --rehearsal 3 --ai-config examples/ai/global.json --check --json
 # 用户模块
 node tools/matchrun.mjs --mode solo --difficulty ALL --seed 1 --seeds 5 --rehearsal 3 --ai examples/ai/my-policy.mjs --check --json
 # 合作局、人类座位托管路径

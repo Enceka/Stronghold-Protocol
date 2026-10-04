@@ -7,11 +7,11 @@ const ids = (x) => Array.isArray(x) && x.length <= 32 && x.every((s) => typeof s
 
 export function checkAIConfig(c) {
   if (!plain(c) || Object.keys(c).some((k) => !['policy', 'coreBondId', 'preferredBands', 'preferredChess', 'weights', 'search'].includes(k))) return false;
-  if (!['builtin', 'preferences', 'search'].includes(c.policy)) return false;
+  if (!['builtin', 'preferences', 'search', 'global'].includes(c.policy)) return false;
   if (c.coreBondId !== undefined && !ids([c.coreBondId])) return false;
   for (const k of ['preferredBands', 'preferredChess']) if (c[k] !== undefined && !ids(c[k])) return false;
   if (c.weights !== undefined && (!plain(c.weights) || Object.entries(c.weights).some(([k, v]) => !Object.hasOwn(AI_WEIGHTS, k) || !Number.isFinite(v) || v < 0 || v > 1e6))) return false;
-  const limits = { candidates: [1, 16], samples: [1, 16], rounds: [1, 32], budgetMs: [10, 10000] };
+  const limits = { candidates: [1, 16], samples: [1, 64], rounds: [1, 32], budgetMs: [10, 10000] };
   if (c.search !== undefined && (!plain(c.search) || Object.entries(c.search).some(([k, v]) => !limits[k] || !Number.isInteger(v) || v < limits[k][0] || v > limits[k][1]))) return false;
   return true;
 }

@@ -50,7 +50,7 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
       const coreShopping = config.coreBondId && observation.public.phase === PHASE.PREP;
       const preferred = coreShopping ? null : preferenceAction(context);
       if (preferred) result = { action: preferred, reason: '按你的策略与干员偏好选择', policy: config.policy };
-      else if (config.policy === 'search' || (coreShopping && advice)) {
+      else if (config.policy === 'search' || config.policy === 'global' || (coreShopping && advice)) {
         const key = `${observation.public.phase}:${observation.public.round}`;
         if (!advice && memory.searchTurn === key) return { action: null, reason: '本阶段搜索完成，委托内置 AI', policy: 'search' };
         result = yield* searchSteps(context);
@@ -95,7 +95,8 @@ export function* searchSteps(ctx) {
   if (!base) return { action: null, policy: 'search', reason: '当前无需决策' };
   const shopping = !!coreBondId && o.public.phase === PHASE.PREP && !o.self.shop.rewardOffer;
   const coreName = coreBondId ? ctx.record('bonds', coreBondId)?.name || coreBondId : '';
-  const { candidates = shopping ? 4 : 3, samples = shopping ? 8 : 2, rounds = 1, budgetMs = shopping ? 5000 : 200 } = ctx.config.search || {};
+  const global = ctx.config.policy === 'global';
+  const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200) } = ctx.config.search || {};
   const deadline = performance.now() + budgetMs;
   const available = ctx.actions({ placements: false });
   const values = shopping ? new Map(ctx.purchaseScores().map((x) => [x.slot, x.value])) : null;
@@ -144,9 +145,10 @@ export function* searchSteps(ctx) {
       reason: `${fit ? `补强【${coreName}】` : '补足阵容、装备或合成需求'}；${sufficient ? `${completed} 个随机样本的平均收益比较` : '样本不足，按构筑价值推荐'}` };
   }) : [];
   return {
-    action: actions[best], policy: 'search', ...(coreBondId ? { coreBondId, shopRecommendations } : {}),
-    reason: shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
-      : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
-    search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, ranking },
+    action: actions[best], policy: global ? 'global' : 'search', ...(coreBondId ? { coreBondId, shopRecommendations } : {}),
+    reason: global ? `全局规划：从当前选择推演至终局，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按终局综合收益推荐' : '样本不足，使用启发式建议'}${truncated ? '（已到计算预算）' : ''}`
+      : shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
+        : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
+    search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, global, continuation: 'builtin', proof: false, ranking },
   };
 }

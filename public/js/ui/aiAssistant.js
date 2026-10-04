@@ -76,7 +76,7 @@ export function AIAssistant() {
     if (!await actions.advice(n, automatic ? { quiet: true } : {})) { clearTimeout(timeout.current); setBusy(false); setError('建议暂不可用，可点击重新计算'); }
   };
   useEffect(() => {
-    if (!available || !priv?.aiConfig?.coreBondId || pub.phase !== 'PREP' || priv.ready || me?.autoplay || busy || requested.current === key) return;
+    if (!available || !priv?.aiConfig?.coreBondId || priv?.aiConfig?.policy === 'global' || pub.phase !== 'PREP' || priv.ready || me?.autoplay || busy || requested.current === key) return;
     const timer = setTimeout(() => request(true), Math.max(300, 1100 - (Date.now() - lastRequest.current)));
     return () => clearTimeout(timer);
   }, [available, key, busy, me?.autoplay]);
@@ -119,7 +119,7 @@ export function AIAssistant() {
           </select>
           <${Button} variant="primary" disabled=${busy} onClick=${applyCore}>应用构筑目标<//>
         </div>
-        <p>${priv.aiConfig?.coreBondId ? `围绕【${gd.bond(priv.aiConfig.coreBondId)?.name || priv.aiConfig.coreBondId}】推荐；购买或刷新后自动重新模拟，推荐卡片会在商店闪烁标记。` : '先选择想玩的核心盟约，即可获得商店购买推荐与多样本模拟。'}</p>
+        <p>${priv.aiConfig?.coreBondId ? `围绕【${gd.bond(priv.aiConfig.coreBondId)?.name || priv.aiConfig.coreBondId}】推荐；购买或刷新后自动重新模拟，推荐卡片会在商店闪烁标记。${priv.aiConfig.policy === 'global' ? '全局规划需手动点击获取，避免长时间占用浏览器。' : ''}` : '先选择想玩的核心盟约，即可获得商店购买推荐与多样本模拟。'}</p>
         <div class="ai-assistant__buttons">
           <${Button} variant="primary" icon="search" loading=${busy} disabled=${busy || me?.autoplay} onClick=${() => request()}>获取建议<//>
           <${Button} variant="secondary" icon="robot" disabled=${busy} onClick=${async () => { if (await actions.autoplay(!me?.autoplay)) setOpen(false); }}>${me?.autoplay ? '停止托管' : '按当前配置托管'}<//>
@@ -144,13 +144,13 @@ export function AIAssistant() {
         </div>` : null}
         <details>
           <summary>设计 AI：偏好与搜索配置</summary>
-          <p>内置策略 builtin；偏好策略 preferences；随机推演 search。填写干员与策略 ID，按数组顺序优先选择。搜索只能在有限计算预算内比较候选。</p>
+          <p>内置策略 builtin；偏好策略 preferences；随机推演 search；全局规划 global。global 会把当前候选推演到终局，但仍是有限样本近似，不能证明数学上的全局最优。</p>
           <label for="ai-config-json">AI 配置（JSON）</label>
           <textarea id="ai-config-json" value=${draft} onInput=${(e) => setDraft(e.target.value)} spellcheck="false" rows="8" />
           <div class="ai-assistant__buttons">
             <${Button} variant="primary" onClick=${save}>保存并应用到本局<//>
             <${Button} variant="secondary" onClick=${() => setDraft(JSON.stringify(SAMPLE, null, 2))}>偏好示例<//>
-            <${Button} variant="secondary" onClick=${() => setDraft(JSON.stringify({ policy: 'search', search: { candidates: 3, samples: 2, rounds: 1, budgetMs: 200 } }, null, 2))}>推演示例<//>
+            <${Button} variant="secondary" onClick=${() => setDraft(JSON.stringify({ policy: 'global', coreBondId: coreDraft || 'victoriaShip', search: { candidates: 8, samples: 16, rounds: 32, budgetMs: 10000 } }, null, 2))}>全局规划示例<//>
           </div>
         </details>
         ${error ? html`<p role="alert" class="t-red">${error}</p>` : null}

@@ -222,3 +222,12 @@ test('core-bond target drives focus, validates disabled bonds, scores shop cards
   assert.ok(h.m.handle('p_0', { t: 'g.aiConfig', config: { policy: 'search', coreBondId: 'lateranoShip' } }).error === 'BAD_TARGET');
   h.m.dispose();
 });
+
+test('global mode evaluates the current choice against a terminal horizon and reports the lack of proof', () => {
+  const h = prep();
+  h.ps('p_0').aiConfig = { policy: 'global', coreBondId: 'victoriaShip', search: { candidates: 2, samples: 2, rounds: 32, budgetMs: 2000 } };
+  const advice = runSteps(decideSteps(h.m, h.ps('p_0'), { advice: true }));
+  assert.equal(advice.policy, 'global'); assert.equal(advice.search.global, true); assert.equal(advice.search.rounds, 32); assert.equal(advice.search.proof, false);
+  assert.match(advice.reason, /全局规划/); assert.ok(advice.search.samples >= 1); assert.ok(advice.action);
+  h.m.dispose();
+});

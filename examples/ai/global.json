@@ -1,0 +1,16 @@
+{
+  "policy": "global",
+  "coreBondId": "victoriaShip",
+  "weights": {
+    "victory": 100000,
+    "survival": 10000,
+    "rounds": 1000,
+    "lp": 10,
+    "layers": 0.1,
+    "funds": 1,
+    "coreMembers": 30,
+    "coreTier": 80,
+    "coreLayers": 0.5
+  },
+  "search": { "candidates": 8, "samples": 32, "rounds": 32, "budgetMs": 10000 }
+}

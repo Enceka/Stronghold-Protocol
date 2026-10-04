@@ -7,7 +7,7 @@
 //                           [--seeds N] [--lp N] [--humans N] [--content full|generic|none] [--check] [--errors]
 //                           [--odds] [--json] [--quiet] [--rehearsal N]
 //                           [--ai builtin|search|./policy.mjs] [--ai-config ./config.json]
-//   --ai        use the builtin bot, sampled search, or a local ES module exporting decide(context)
+//   --ai        use the builtin bot, sampled search, global terminal-horizon planning, or a local ES module exporting decide(context)
 //   --ai-config JSON configuration (docs/AI.md); applied independently to every seat
 //   --players   co-op seats (default 2; solo is always 1)
 //   --humans N  the first N seats are human seats on "AI 托管" (exercises the human views / m.private paths)
@@ -61,12 +61,12 @@ if (opt.help) {
 }
 
 let aiPolicy = null;
-let aiConfig = { policy: opt.ai === 'search' ? 'search' : 'builtin' };
+let aiConfig = { policy: opt.ai === 'global' ? 'global' : opt.ai === 'search' ? 'search' : 'builtin' };
 if (opt['ai-config']) {
   aiConfig = JSON.parse(await readFile(resolve(String(opt['ai-config'])), 'utf8'));
   if (!checkAIConfig(aiConfig)) throw new Error('invalid --ai-config (see docs/AI.md)');
 }
-if (opt.ai && !['builtin', 'search'].includes(opt.ai)) {
+if (opt.ai && !['builtin', 'search', 'global'].includes(opt.ai)) {
   const module = await import(pathToFileURL(resolve(String(opt.ai))).href);
   aiPolicy = module.decide || module.default;
   if (typeof aiPolicy !== 'function') throw new Error('--ai module must export decide(context) or a default function');
