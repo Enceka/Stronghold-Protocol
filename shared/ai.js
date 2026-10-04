@@ -11,7 +11,7 @@ export function checkAIConfig(c) {
   if (c.coreBondId !== undefined && !ids([c.coreBondId])) return false;
   for (const k of ['preferredBands', 'preferredChess']) if (c[k] !== undefined && !ids(c[k])) return false;
   if (c.weights !== undefined && (!plain(c.weights) || Object.entries(c.weights).some(([k, v]) => !Object.hasOwn(AI_WEIGHTS, k) || !Number.isFinite(v) || v < 0 || v > 1e6))) return false;
-  const limits = { candidates: [1, 16], samples: [1, 64], rounds: [1, 32], budgetMs: [10, 10000] };
+  const limits = { candidates: [1, 16], samples: [1, 64], rounds: [1, 32], budgetMs: [10, 10000], lookahead: [0, 2] };
   if (c.search !== undefined && (!plain(c.search) || Object.entries(c.search).some(([k, v]) => !limits[k] || !Number.isInteger(v) || v < limits[k][0] || v > limits[k][1]))) return false;
   return true;
 }

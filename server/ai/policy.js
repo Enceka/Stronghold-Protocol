@@ -154,7 +154,7 @@ export function* searchSteps(ctx) {
   const shopping = !!coreBondId && o.public.phase === PHASE.PREP && !o.self.shop.rewardOffer;
   const coreName = coreBondId ? ctx.record('bonds', coreBondId)?.name || coreBondId : '';
   const global = ctx.config.policy === 'global';
-  const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200) } = ctx.config.search || {};
+  const { candidates = global ? 8 : (shopping ? 4 : 3), samples = global ? 32 : (shopping ? 8 : 2), rounds = global ? 32 : 1, budgetMs = global ? 10000 : (shopping ? 5000 : 200), lookahead = global ? 1 : 0 } = ctx.config.search || {};
   const deadline = performance.now() + budgetMs;
   const available = ctx.actions({ placements: false });
   const values = shopping ? new Map(ctx.purchaseScores().map((x) => [x.slot, x.value])) : null;
@@ -178,8 +178,8 @@ export function* searchSteps(ctx) {
       if (performance.now() >= deadline) { truncated = true; break; }
       const r = yield* ctx.evaluateSteps(action, {
         sampleSeed, rounds, weights: ctx.config.weights || AI_WEIGHTS, deadline,
-        continuationPolicy: global ? globalContinuation({ playerId: o.self.playerId, sampleSeed, deadline, depth: 1 }) : null,
-        continuationKey: global ? 'global-l1' : null,
+        continuationPolicy: global && lookahead > 0 ? globalContinuation({ playerId: o.self.playerId, sampleSeed, deadline, depth: lookahead }) : null,
+        continuationKey: global ? `global-l${lookahead}` : null,
       });
       evaluated++;
       if (!r.complete || r.errors || !Number.isFinite(r.score)) { truncated = true; break; }
@@ -212,6 +212,6 @@ export function* searchSteps(ctx) {
       : shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
         : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
     search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, global,
-      continuation: global ? 'lookahead-1' : 'builtin', proof: false, ranking },
+      continuation: global ? `lookahead-${lookahead}` : 'builtin', lookahead, proof: false, ranking },
   };
 }
