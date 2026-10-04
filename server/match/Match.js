@@ -114,6 +114,7 @@
 //                      with a virtual one); the rest runs in later callbacks (scheduleBotPrep)
 //   opts.headlessSliceMs  wall-clock ms per callback of a server-run normal / 联防 field (client-side combat: bots,
 //                      takeovers; default 8 with a real scheduler, at once with a virtual one)
+//   opts.aiPolicy   optional synchronous function/generator decide(context), see docs/AI.md; null delegates the bot
 // Seats may be all bots (tools/matchrun.mjs); the lobby always has ≥ 1 human.
 //
 // Diagnostics: m.errors / m.errorCount (engine), m.dispatcher.errors / .errorsByKey (meta handlers), m.simErrors
@@ -154,6 +155,9 @@ import { buildBattleSpec, createBattleFromSpec, resultDigest, compactResult as c
 import { CreditPool } from './finalAssault.js';
 import { buildResult } from './results.js';
 import { botPrepBeginSteps, botPrepEndSteps, botPickBand, botPickCard } from './bot.js';
+import { AI_VERSION, checkAIConfig } from '../../shared/ai.js';
+import { observe, applyAIAction } from '../ai/model.js';
+import { decideSteps, policyFailure } from '../ai/policy.js';
 
 const BOT_REHEARSAL_DEFAULT = 3;
 /** Wall-clock ms of bot layout rehearsal per scheduler callback (real time; virtual time runs it in one go). */
@@ -258,6 +262,8 @@ export class Match {
     this.gameSpeed = Number.isFinite(opts.combatSpeed) && opts.combatSpeed > 0 ? Math.min(opts.combatSpeed, 200) : GAME_SPEED;
     /** layouts a bot rehearses per prep with the real simulation (bot.js; 0 = heuristic placement only) */
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
+    this.aiPolicy = typeof opts.aiPolicy === 'function' ? opts.aiPolicy : null;
+    this._aiJobs = new Set();
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */
     this.botSliceMs = Number.isFinite(opts.botSliceMs) && opts.botSliceMs > 0 ? opts.botSliceMs : this.sched.virtual ? Infinity : BOT_SLICE_MS;
     this.ds = dataSourceFor(this.data);
@@ -598,6 +604,8 @@ export class Match {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    for (const gen of this._aiJobs) { try { gen.return(); } catch { /* cleanup of disposable models */ } }
+    this._aiJobs.clear();
     if (this.runner) { try { this.runner.stop(); } catch { /* ignore */ } }
     this._stopClientCombat();
     for (const h of this._timers) { try { this.sched.clearTimeout(h); } catch { /* ignore */ } }
@@ -1049,6 +1057,9 @@ export class Match {
       case 'g.emote': return this.emote(ps, msg.id);
       case 'g.watch': return this.watch(ps, msg.fieldId);
       case 'g.autoplay': return this.setAutoplay(ps, !!msg.on);
+      case 'g.aiConfig': return this.setAIConfig(ps, msg.config);
+      case 'g.advice': return this.requestAdvice(ps, msg.seq);
+      case 'g.aiApply': return this.applyAdvice(ps, msg.seq, msg.stateKey);
       case 'g.pause': return this.setPause(ps, !!msg.on);
       // the stats the board's units start their next battle with (the detail card in prep, user playtest #4 item 7)
       case 'g.unitStats': return this.unitStats(ps, msg.seq ?? null);
@@ -1102,6 +1113,85 @@ export class Match {
     this.markPublic();
     if (on) this.kickBot(ps);
     return OK;
+  }
+
+  setAIConfig(ps, config) {
+    if (!checkAIConfig(config)) return fail(ERR.BAD_MSG, 'invalid AI configuration');
+    if (!ps.alive) return fail(ERR.ELIMINATED);
+    if (config.preferredBands?.some((id) => !this.gd.band(id)) || config.preferredChess?.some((id) => !this.gd.chess(id) || this.gd.isGolden(id))) return fail(ERR.BAD_TARGET, 'unknown preferred band or base chess');
+    ps.aiConfig = JSON.parse(JSON.stringify(config));
+    ps.aiMemory = {};
+    ps._aiLastAdvice = null;
+    ps._botPrepToken++;
+    ps._aiAdviceToken = (ps._aiAdviceToken || 0) + 1;
+    this.markPrivate(ps);
+    if (ps.botControlled) this.kickBot(ps);
+    return OK;
+  }
+
+  usesCustomAI(ps) { return !!this.aiPolicy || (ps.aiConfig?.policy && ps.aiConfig.policy !== 'builtin'); }
+
+  /** Cooperative driver shared by recommendations and custom draft decisions. Close cancelled models. */
+  driveAI(gen, valid, done) {
+    this._aiJobs.add(gen);
+    const finish = (value) => { this._aiJobs.delete(gen); done(value); };
+    const step = () => {
+      if (!valid() || this.disposed || this.ended) { try { gen.return(); } catch { /* cleanup */ } finish(null); return; }
+      const start = performance.now();
+      try {
+        let r;
+        do { r = gen.next(); } while (!r.done && performance.now() - start < 8);
+        if (r.done) finish(r.value);
+        else this.later(0, step);
+      } catch (e) { try { gen.return(); } catch { /* cleanup */ } this.log.warn?.(`[AI] ${e.message}`); finish(null); }
+    };
+    step();
+  }
+
+  requestAdvice(ps, seq) {
+    if (!Number.isInteger(seq) || seq < 0 || seq > 2 ** 31) return fail(ERR.BAD_MSG);
+    if (!ps.alive) return fail(ERR.ELIMINATED);
+    if (![PHASE.INFO_CHECK, PHASE.BAND_DRAFT, PHASE.SP_DRAFT, PHASE.PREP].includes(this.phase)) return fail(ERR.WRONG_PHASE);
+    if (ps.botControlled) return fail(ERR.WRONG_PHASE, 'AI already controls this seat');
+    const now = this.sched.now();
+    if (now - (ps._aiAdviceAt ?? -Infinity) < 1000) return fail(ERR.RATE);
+    ps._aiAdviceAt = now;
+    const observation = observe(this, ps.playerId);
+    const token = ps._aiAdviceToken = (ps._aiAdviceToken || 0) + 1;
+    const phase = this.phase, round = this.round;
+    const valid = () => token === ps._aiAdviceToken && this.phase === phase && this.round === round && !ps.botControlled && ps.alive;
+    this.driveAI(decideSteps(this, ps, { advice: true }), valid, (result) => {
+      if (this.disposed || this.ended) return;
+      const stale = !valid() || observe(this, ps.playerId).modelKey !== observation.modelKey;
+      ps._aiLastAdvice = stale || !result?.action ? null : { seq, stateKey: observation.stateKey, modelKey: observation.modelKey, action: JSON.parse(JSON.stringify(result.action)) };
+      this.sendTo(ps.playerId, { t: 'm.advice', version: AI_VERSION, seq, stateKey: observation.stateKey,
+        action: stale ? null : result?.action || null, reason: stale ? '状态已变化，请重新获取建议' : result?.reason || '当前无需决策',
+        policy: result?.policy || ps.aiConfig.policy, stale, ...(result?.search ? { search: result.search } : {}) });
+    });
+    return OK;
+  }
+
+  applyAdvice(ps, seq, stateKey) {
+    const advice = ps._aiLastAdvice;
+    if (!ps.alive) return fail(ERR.ELIMINATED);
+    if (ps.botControlled || !advice || advice.seq !== seq || advice.stateKey !== stateKey) return fail(ERR.BAD_TARGET, 'advice unavailable');
+    if (![PHASE.INFO_CHECK, PHASE.BAND_DRAFT, PHASE.SP_DRAFT, PHASE.PREP].includes(this.phase) || observe(this, ps.playerId).modelKey !== advice.modelKey) return fail(ERR.BAD_TARGET, 'advice stale');
+    ps._aiLastAdvice = null;
+    return applyAIAction(this, ps.playerId, advice.action);
+  }
+
+  *customPrepSteps(ps) {
+    for (let i = 0; i < 32 && this.phase === PHASE.PREP && ps.alive && !ps.ready && ps.botControlled; i++) {
+      const result = yield* decideSteps(this, ps);
+      if (!result?.action) return;
+      const before = observe(this, ps.playerId).stateKey;
+      let applied;
+      try { applied = applyAIAction(this, ps.playerId, result.action); }
+      catch (e) { policyFailure(this, ps, e.message); return; }
+      if (applied.error || observe(this, ps.playerId).stateKey === before) { policyFailure(this, ps, applied.error || 'action made no progress'); return; }
+      yield;
+    }
+    if (ps.alive && !ps.ready && ps.botControlled) policyFailure(this, ps, '32 actions in one prep exceeded');
   }
 
   /**
@@ -1322,6 +1412,17 @@ export class Match {
       if (this.phase !== PHASE.BAND_DRAFT || token !== this._turnToken) return;
       const ps = this.players.get(this.draftTurn());
       if (!ps || !ps.botControlled) return;
+      if (this.usesCustomAI(ps)) {
+        this.driveAI(decideSteps(this, ps), () => this.phase === PHASE.BAND_DRAFT && token === this._turnToken && ps.botControlled, (result) => {
+          if (this.phase !== PHASE.BAND_DRAFT || token !== this._turnToken || !ps.botControlled) return;
+          if (result?.action && !applyAIAction(this, ps.playerId, result.action).error) return;
+          let bandId = botPickBand(this, ps);
+          for (let k = 0; k < 8 && this.bandTaken(bandId, ps.playerId); k++) bandId = botPickBand(this, ps);
+          if (this.bandTaken(bandId, ps.playerId)) bandId = this.defaultBand(ps.playerId);
+          this._applyBand(ps, bandId, { dedupe: true });
+        });
+        return;
+      }
       // a strategy a teammate already took is not selectable (队友已选): the bot re-draws, else the first free one
       let id = botPickBand(this, ps);
       for (let k = 0; k < 8 && this.bandTaken(id, ps.playerId); k++) id = botPickBand(this, ps);
@@ -1558,6 +1659,14 @@ export class Match {
       if (!ps || !ps.botControlled) return;
       const avail = this.sp.cards.map((c) => c.idx).filter((i) => this.sp.taken[i] == null);
       if (!avail.length) return;
+      if (this.usesCustomAI(ps)) {
+        this.driveAI(decideSteps(this, ps), () => this.phase === PHASE.SP_DRAFT && token === this._turnToken && ps.botControlled, (result) => {
+          if (this.phase !== PHASE.SP_DRAFT || token !== this._turnToken || !ps.botControlled) return;
+          if (result?.action && !applyAIAction(this, ps.playerId, result.action).error) return;
+          this._applyCard(ps, botPickCard(this, ps, this.sp.cards, avail));
+        });
+        return;
+      }
       this._applyCard(ps, botPickCard(this, ps, this.sp.cards, avail));
     });
   }
@@ -1748,6 +1857,10 @@ export class Match {
     };
     this.later(this.scaled(DELAYS.BOT_ACTION + i * DELAYS.BOT_STAGGER), () => {
       if (!valid()) return;
+      if (this.usesCustomAI(ps)) { this.driveAI(this.customPrepSteps(ps), valid, () => { if (valid()) begin(); }); }
+      else begin();
+    });
+    const begin = () => {
       drive(botPrepBeginSteps(this, ps), '', (job) => {
         if (!job) { end(null); return; }
         const slice = () => {
@@ -1761,7 +1874,7 @@ export class Match {
         if (bounded) this.later(0, slice);
         else slice();
       });
-    });
+    };
   }
 
   onReadyChanged(ps) {

@@ -2,6 +2,7 @@
 // Every client→server message is `{ t, rid?, ...fields }`. Unknown `t` or invalid fields ⇒ ERR.BAD_MSG.
 
 import { DIFFICULTIES, NAME_MAX_LEN, ROOM_CODE_LEN, MAX_SEATS, EMOTES, GEO } from './constants.js';
+import { checkAIConfig } from './ai.js';
 
 // ---- tiny validators -------------------------------------------------------
 const isInt = (v, lo = -Infinity, hi = Infinity) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -284,6 +285,9 @@ export const C2S = {
   'g.emote': { id: (v) => EMOTES.includes(v) },
   'g.watch': { fieldId: (v) => isStr(v, 32) },
   'g.autoplay': { on: isBool },
+  'g.aiConfig': { config: checkAIConfig },
+  'g.advice': { seq: (v) => isInt(v, 0, 2 ** 31) },
+  'g.aiApply': { seq: (v) => isInt(v, 0, 2 ** 31), stateKey: (v) => isStr(v, 64) },
   // solo pause (official PauseUp / ResumeUp, DESIGN §14): freezes the running battle (field clock, deadlines, the
   // browser's local runner) — solo matches only (co-op ⇒ WRONG_PHASE), only while a battle runs; m.public.paused
   'g.pause': { on: isBool },
@@ -312,6 +316,7 @@ export const S2C = [
   'm.public', 'm.private', 'm.field', 'm.toast', 'm.ticker', 'm.emote', 'm.result',
   // m.unitStats { seq, round, units: [unitStatsEntry] } — the answer to g.unitStats (the requester only)
   'm.unitStats',
+  'm.advice',
   // client-side combat (DESIGN §14): b.start { battleId, fieldId, kind, spec, authoritative, startAt, serverNow, elapsed,
   // speed, watch? } · b.pool { hp, max, teamLp, acked: { [fieldId]: cumulative boss damage counted } } ·
   // b.end { battleId, fieldId, reason }

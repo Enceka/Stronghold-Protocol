@@ -602,7 +602,7 @@ function makeLogger(quiet) {
  * @param {{
  *   port?: number, host?: string, quiet?: boolean, log?: object,
  *   publicDir?: string, dataDir?: string, sharedDir?: string,
- *   MatchClass?: Function, seedFn?: () => number,
+ *   MatchClass?: Function, seedFn?: () => number, aiPolicy?: Function,
  *   lobbyGraceMs?: number, reconnectWindowMs?: number, heartbeatMs?: number, helloTimeoutMs?: number,
  *   ratePerSec?: number, rateBurst?: number, maxConnections?: number, maxRooms?: number,
  *   maxConnectionsPerAddr?: number, maxRoomsPerAddr?: number, maxMatchesPerAddr?: number, resyncMinGapMs?: number,
@@ -633,7 +633,7 @@ export async function startServer(opts = {}) {
   for (const k of ['lobbyGraceMs', 'maxRooms', 'maxRoomsPerAddr', 'maxMatchesPerAddr', 'resyncMinGapMs', 'soloReconnectWindowMs']) {
     if (opts[k] != null) lobbyOptions[k] = opts[k];
   }
-  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, options: lobbyOptions });
+  const lobby = new Lobby({ registry, log, MatchClass: opts.MatchClass, getData: () => data, seedFn: opts.seedFn, aiPolicy: opts.aiPolicy, options: lobbyOptions });
   const network = new Network({ registry, handler: lobby, log, options: netOptions });
   const serveStatic = createStaticHandler({ publicDir, dataDir, sharedDir, log });
   const startedAt = Date.now();

@@ -6,6 +6,9 @@
 //   node tools/matchrun.mjs [--mode solo|coop] [--difficulty FUNNY|NORMAL|HARD|ABYSS|ALL] [--players 1..4] [--seed 1]
 //                           [--seeds N] [--lp N] [--humans N] [--content full|generic|none] [--check] [--errors]
 //                           [--odds] [--json] [--quiet] [--rehearsal N]
+//                           [--ai builtin|search|./policy.mjs] [--ai-config ./config.json]
+//   --ai        use the builtin bot, sampled search, or a local ES module exporting decide(context)
+//   --ai-config JSON configuration (docs/AI.md); applied independently to every seat
 //   --players   co-op seats (default 2; solo is always 1)
 //   --humans N  the first N seats are human seats on "AI 托管" (exercises the human views / m.private paths)
 //   --seeds N   run N consecutive seeds and print an aggregate (rounds survived, LP by round, outcomes)
@@ -37,6 +40,10 @@ import { attachAudit } from '../server/match/audit.js';
 import { Battle } from '../server/sim/Battle.js';
 import { getData } from '../server/data.js';
 import { layerGainRoom } from '../shared/constants.js';
+import { checkAIConfig } from '../shared/ai.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const argv = process.argv.slice(2);
 const opt = {};
@@ -47,9 +54,22 @@ for (let i = 0; i < argv.length; i++) {
   const v = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
   opt[k] = v;
 }
+const report = (...args) => (opt.json ? console.error : console.log)(...args);
 if (opt.help) {
   console.log(Buffer.from(await (await import('node:fs')).promises.readFile(new URL(import.meta.url))).toString().split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
   process.exit(0);
+}
+
+let aiPolicy = null;
+let aiConfig = { policy: opt.ai === 'search' ? 'search' : 'builtin' };
+if (opt['ai-config']) {
+  aiConfig = JSON.parse(await readFile(resolve(String(opt['ai-config'])), 'utf8'));
+  if (!checkAIConfig(aiConfig)) throw new Error('invalid --ai-config (see docs/AI.md)');
+}
+if (opt.ai && !['builtin', 'search'].includes(opt.ai)) {
+  const module = await import(pathToFileURL(resolve(String(opt.ai))).href);
+  aiPolicy = module.decide || module.default;
+  if (typeof aiPolicy !== 'function') throw new Error('--ai module must export decide(context) or a default function');
 }
 
 const DIFFS = ['FUNNY', 'NORMAL', 'HARD', 'ABYSS'];
@@ -117,9 +137,11 @@ function runOne(seed, difficulty) {
     roomCode: 'RUN', mode, difficulty, seats, seed, data, log, scheduler: sched,
     battleContent: opt.content || 'full',
     botRehearsal: rehearsal,
+    aiPolicy,
     BattleClass: opt.errors && canCount ? CountingBattle : undefined,
     send: () => { frames++; return true; }, broadcast: () => {}, onEnd: (s) => { summary = s; },
   });
+  for (const ps of m.order) ps.aiConfig = JSON.parse(JSON.stringify(aiConfig));
   for (const ps of m.players.values()) if (!ps.isBot) ps.autoplay = true;
   const audit = opt.check || opt.odds ? attachAudit(m, { invariants: !!opt.check }) : null;
   const rounds = [];
@@ -164,6 +186,8 @@ function runOne(seed, difficulty) {
   return {
     seed, difficulty, summary, rounds, errors, matchErrors: m.errorCount, simErrors: m.simErrors, metaErrors: m.dispatcher.errors,
     ms: Date.now() - t0, stageId: m.stageId, bossId: m.bossId, frames, audit,
+    aiFailures: m.order.reduce((sum, p) => sum + p.aiFailures, 0),
+    aiSearch: m.order.reduce((sum, p) => { for (const k of Object.keys(sum)) sum[k] += p.aiSearchStats?.[k] || 0; return sum; }, { decisions: 0, samples: 0, evaluated: 0, truncated: 0 }),
   };
 }
 
@@ -194,7 +218,7 @@ if (opt.json) {
   console.log(JSON.stringify(results.map((r) => ({
     seed: r.seed, difficulty: r.difficulty, stageId: r.stageId, bossId: r.bossId, victory: r.summary?.victory, roundsPassed: r.summary?.roundsPassed,
     reason: r.summary?.reason, rounds: r.rounds, errors: r.errors.length + r.matchErrors, simErrors: r.simErrors, metaErrors: r.metaErrors,
-    violations: r.audit ? r.audit.violations : undefined,
+    violations: r.audit ? r.audit.violations : undefined, ai: opt.ai || aiConfig.policy, aiFailures: r.aiFailures, aiSearch: r.aiSearch, ms: r.ms,
   })), null, 1));
 } else if (quiet) {
   for (const difficulty of difficulties) {
@@ -228,35 +252,35 @@ if (opt.check) {
   const bad = results.filter((r) => r.audit && r.audit.violations.length);
   const stuck = results.filter((r) => !r.summary);
   const checks = results.reduce((n, r) => n + (r.audit ? r.audit.checks : 0), 0);
-  console.log(`\ncheck: ${results.length} match(es), ${checks} rule checks, ${results.reduce((n, r) => n + (r.audit ? r.audit.phases : 0), 0)} invariant passes → ${bad.length ? `${bad.length} match(es) with violations` : 'no violations'}${stuck.length ? `, ${stuck.length} stuck` : ''}`);
-  for (const r of bad.slice(0, 10)) console.log(`  ${r.difficulty} seed ${r.seed}:\n    ${r.audit.violations.slice(0, 8).join('\n    ')}`);
+  report(`\ncheck: ${results.length} match(es), ${checks} rule checks, ${results.reduce((n, r) => n + (r.audit ? r.audit.phases : 0), 0)} invariant passes → ${bad.length ? `${bad.length} match(es) with violations` : 'no violations'}${stuck.length ? `, ${stuck.length} stuck` : ''}`);
+  for (const r of bad.slice(0, 10)) report(`  ${r.difficulty} seed ${r.seed}:\n    ${r.audit.violations.slice(0, 8).join('\n    ')}`);
   if (bad.length || stuck.length || results.some((r) => r.matchErrors > 0)) exitCode = 1;
 }
 
 if (opt.odds) {
   const tot = {};
   for (const r of results) for (const [lv, row] of Object.entries(r.audit?.odds || {})) for (const [t, n] of Object.entries(row)) { (tot[lv] ||= {})[t] = (tot[lv][t] || 0) + n; }
-  console.log('\nshop odds (rolled chess slots per shop level → tier shares):');
+  report('\nshop odds (rolled chess slots per shop level → tier shares):');
   for (const lv of Object.keys(tot).sort()) {
     const n = Object.values(tot[lv]).reduce((a, b) => a + b, 0);
-    console.log(`  L${lv} (${n} rolls): ${Object.keys(tot[lv]).sort().map((t) => `T${t} ${((tot[lv][t] / n) * 100).toFixed(1)}%`).join('  ')}`);
+    report(`  L${lv} (${n} rolls): ${Object.keys(tot[lv]).sort().map((t) => `T${t} ${((tot[lv][t] / n) * 100).toFixed(1)}%`).join('  ')}`);
   }
 }
 
 if (opt.errors) {
   const list = [...simErrors.values()].sort((a, b) => b.count - a.count);
   const total = list.reduce((n, r) => n + r.count, 0);
-  console.log(`\nerrors by source: ${total} occurrence(s), ${list.length} unique${canCount ? '' : ' (unique records only: the sim error sink was not observable)'}`);
+  report(`\nerrors by source: ${total} occurrence(s), ${list.length} unique${canCount ? '' : ' (unique records only: the sim error sink was not observable)'}`);
   if (list.length) {
-    console.log('   count  battles  seeds         source                              label (unit) — message');
+    report('   count  battles  seeds         source                              label (unit) — message');
     for (const r of list.slice(0, Number(opt.errors) > 0 ? Number(opt.errors) : 40)) {
       const seedsStr = [...r.seeds].slice(0, 4).join(',') + (r.seeds.size > 4 ? '…' : '');
-      console.log(`  ${String(r.count).padStart(6)}  ${String(r.battles.size).padStart(7)}  ${seedsStr.padEnd(12)}  ${r.src.padEnd(34)}  ${r.label}${r.who ? ` (${r.who})` : ''} — ${String(r.message).slice(0, 140)}`);
+      report(`  ${String(r.count).padStart(6)}  ${String(r.battles.size).padStart(7)}  ${seedsStr.padEnd(12)}  ${r.src.padEnd(34)}  ${r.label}${r.who ? ` (${r.who})` : ''} — ${String(r.message).slice(0, 140)}`);
     }
     const byModule = new Map();
     for (const r of list) byModule.set(r.src.replace(/:\d+$/, ''), (byModule.get(r.src.replace(/:\d+$/, '')) || 0) + r.count);
-    console.log(`  by module: ${[...byModule.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
-    console.log(`  repro: node tools/matchrun.mjs --mode ${mode} --difficulty <D> --players ${players} --seed <n> --errors (seeds are listed per row, prefixed by the difficulty initial)`);
+    report(`  by module: ${[...byModule.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · ')}`);
+    report(`  repro: node tools/matchrun.mjs --mode ${mode} --difficulty <D> --players ${players} --seed <n> --errors (seeds are listed per row, prefixed by the difficulty initial)`);
   }
 }
 

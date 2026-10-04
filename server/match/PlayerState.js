@@ -101,6 +101,9 @@ export class PlayerState {
     this.connected = this.isBot ? true : !!seat.connected;
     this.left = false;
     this.autoplay = false;
+    this.aiConfig = { policy: 'builtin' };
+    this.aiMemory = {};
+    this.aiFailures = 0;
     this.alive = true;
     this.lp = 0;
     this.bandId = null;
@@ -1662,6 +1665,7 @@ export class PlayerState {
       nextEnemies: this.m.nextEnemiesFor(this),
       // DESIGN §16: the effective operator loadout ({ [baseChessId]: { skill, module } }; chess not listed use defaults)
       loadout: this.loadout,
+      aiConfig: this.aiConfig,
       stats: {
         dmgDealt: Math.round(this.stats.dmgDealt), kills: this.stats.kills, leaks: this.stats.leaks, gold: this.stats.gold,
         refreshes: this.stats.refreshes, merges: this.stats.merges,

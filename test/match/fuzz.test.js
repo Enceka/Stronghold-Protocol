@@ -35,6 +35,9 @@ function randomIntent(rng, m, ps) {
     case 'g.emote': return { t, id: rng.pick(EMOTES) };
     case 'g.watch': return { t, fieldId: rng.pick(['n:p_0', 'n:p_1', 'n:ai_0', 'u', 'b1', 'b2', 'zz', '']) };
     case 'g.autoplay': return { t, on: rng() < 0.05 };
+    case 'g.aiConfig': return { t, config: { policy: rng.pick(['builtin', 'preferences']) } };
+    case 'g.advice': return { t, seq: rng.int(1000) };
+    case 'g.aiApply': return { t, seq: rng.int(1000), stateKey: ps?._aiLastAdvice?.stateKey || 'stale' };
     case 'g.pause': return { t, on: rng() < 0.5 };
     default: return { t };
   }

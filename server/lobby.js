@@ -194,13 +194,15 @@ export class Lobby {
    *   getData?: () => object,
    *   now?: () => number,
    *   seedFn?: () => number,
+   *   aiPolicy?: Function,
    *   options?: Partial<typeof LOBBY_DEFAULTS>,
    * }} opts
    */
-  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, options = {} }) {
+  constructor({ registry, log = noopLog, MatchClass = DefaultMatch, getData = defaultGetData, now = Date.now, seedFn, aiPolicy = null, options = {} }) {
     this.registry = registry;
     this.log = log;
     this.MatchClass = MatchClass;
+    this.aiPolicy = aiPolicy;
     this.getData = getData;
     this.now = now;
     this.seedFn = seedFn || (() => randomInt(2 ** 32));
@@ -605,6 +607,7 @@ export class Lobby {
         // the room's match number: with the seed it keeps battleIds unique across the room's matches (DESIGN §14)
         matchNo: room.matchCount + 1,
         data: this.safeData(),
+        aiPolicy: this.aiPolicy,
         log: this.log,
         now: this.now,
         send: (playerId, msg) => (ctx.live ? this.matchSend(room, ctx, playerId, msg) : false),

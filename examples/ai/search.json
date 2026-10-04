@@ -1,0 +1,5 @@
+{
+  "policy": "search",
+  "weights": { "victory": 100000, "survival": 10000, "rounds": 1000, "lp": 10, "layers": 0.1, "funds": 1 },
+  "search": { "candidates": 3, "samples": 2, "rounds": 1, "budgetMs": 1000 }
+}
