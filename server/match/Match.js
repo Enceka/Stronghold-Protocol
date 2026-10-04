@@ -264,6 +264,8 @@ export class Match {
     this.botRehearsal = Number.isInteger(opts.botRehearsal) && opts.botRehearsal >= 0 ? Math.min(opts.botRehearsal, 8) : BOT_REHEARSAL_DEFAULT;
     this.aiPolicy = typeof opts.aiPolicy === 'function' ? opts.aiPolicy : null;
     this._aiJobs = new Set();
+    /** Completed stochastic decision evaluations keyed by visible model state + action + sample configuration. */
+    this._aiTransposition = new Map();
     /** wall-clock budget of one rehearsal slice (scheduleBotPrep) */
     this.botSliceMs = Number.isFinite(opts.botSliceMs) && opts.botSliceMs > 0 ? opts.botSliceMs : this.sched.virtual ? Infinity : BOT_SLICE_MS;
     this.ds = dataSourceFor(this.data);
@@ -606,6 +608,7 @@ export class Match {
     this.disposed = true;
     for (const gen of this._aiJobs) { try { gen.return(); } catch { /* cleanup of disposable models */ } }
     this._aiJobs.clear();
+    this._aiTransposition.clear();
     if (this.runner) { try { this.runner.stop(); } catch { /* ignore */ } }
     this._stopClientCombat();
     for (const h of this._timers) { try { this.sched.clearTimeout(h); } catch { /* ignore */ } }

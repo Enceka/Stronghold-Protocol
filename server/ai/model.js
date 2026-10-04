@@ -29,7 +29,7 @@ export function forkDecision(m, { sampleSeed = null, playerId = null } = {}) {
   const f = Object.create(Object.getPrototypeOf(m));
   const seen = new Map([[m, f]]);
   for (const x of [m.data, m.gd, m.ds, m.registry]) if (x) seen.set(x, x);
-  const skip = new Set(['opts', 'sched', 'sendFn', 'broadcastFn', 'onEndFn', 'log', 'dispatcher', 'fields', 'runner', 'pacer', '_timers', '_unitStatsCache', '_botPath', '_botTraits', '_privDirty', 'aiPolicy', '_aiJobs']);
+  const skip = new Set(['opts', 'sched', 'sendFn', 'broadcastFn', 'onEndFn', 'log', 'dispatcher', 'fields', 'runner', 'pacer', '_timers', '_unitStatsCache', '_botPath', '_botTraits', '_privDirty', 'aiPolicy', '_aiJobs', '_aiTransposition']);
   for (const [k, v] of Object.entries(m)) {
     if (skip.has(k) || k.startsWith('rng')) continue;
     if (/Timer$/.test(k) || k === '_bossClock') f[k] = null;
@@ -39,7 +39,7 @@ export function forkDecision(m, { sampleSeed = null, playerId = null } = {}) {
   f.sched = new VirtualScheduler({ start: m.sched.now(), instantCombat: false });
   f.ownsScheduler = true; f.clientCombat = false; f.verifyMode = 'off';
   f.fields = []; f.runner = null; f.pacer = null; f._timers = new Set(); f._privDirty = new Set();
-  f._pubDirty = false; f._prepEndQueued = false; f.aiPolicy = null; f._aiJobs = new Set();
+  f._pubDirty = false; f._prepEndQueued = false; f.aiPolicy = null; f._aiJobs = new Set(); f._aiTransposition = new Map();
   f.botRehearsal = 0; f.botSliceMs = 8; f.headlessSliceMs = 8;
   f.dispatcher = new EffectDispatcher(f, f.registry);
   if (sampleSeed !== null) f.seed = sampleSeed >>> 0;
@@ -186,8 +186,10 @@ export function scoreState(m, playerId, weights = {}) {
 }
 
 /** A single sampled continuation. Each yield is one virtual scheduler callback, allowing live room time slicing. */
-export function* rolloutSteps(m, playerId, action, { sampleSeed = 1, rounds = 1, weights = {}, maxSteps = 100000, deadline = Infinity } = {}) {
+export function* rolloutSteps(m, playerId, action, options = {}) {
+  const { sampleSeed = 1, rounds = 1, weights = {}, maxSteps = 100000, deadline = Infinity } = options;
   const f = forkDecision(m, { sampleSeed, playerId });
+  if (typeof options.continuationPolicy === 'function') f.aiPolicy = options.continuationPolicy;
   const startRound = Math.max(1, f.round);
   try {
     const plan = Array.isArray(action) ? action : [action];

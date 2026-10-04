@@ -1,7 +1,7 @@
 import { AI_DEFAULT, AI_WEIGHTS, checkAIConfig } from '../../shared/ai.js';
 import { PHASE } from '../../shared/constants.js';
 import { deriveSeed } from '../sim/rng.js';
-import { observe, baselineAction, legalActions, testAction, rolloutSteps, evaluateAction, purchaseScores } from './model.js';
+import { observe, baselineAction, legalActions, testAction, rolloutSteps, purchaseScores, runSteps } from './model.js';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function freeze(x) { if (x && typeof x === 'object') { Object.freeze(x); for (const v of Object.values(x)) freeze(v); } return x; }
@@ -17,6 +17,25 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
   const memory = advice ? clone(ps.aiMemory || {}) : (ps.aiMemory ||= {});
   let base;
   const baseline = () => { if (base === undefined) base = baselineAction(m, ps.playerId); return base ? clone(base) : null; };
+  const cacheStats = { hits: 0, misses: 0 };
+  const cacheKey = (action, options = {}) => {
+    let body;
+    try { body = JSON.stringify([observation.modelKey, action, options.sampleSeed ?? null, options.rounds ?? 1, options.maxSteps ?? 100000, options.weights || AI_WEIGHTS, options.continuationKey || null]); }
+    catch { return null; }
+    return body;
+  };
+  function* cachedEvaluateSteps(action, options = {}) {
+    const key = cacheKey(action, options);
+    const cache = m._aiTransposition;
+    if (key && cache?.has(key)) { cacheStats.hits++; return clone(cache.get(key)); }
+    cacheStats.misses++;
+    const result = yield* rolloutSteps(m, ps.playerId, action, options);
+    if (key && cache && result && result.complete && !result.errors) {
+      if (cache.size >= 4096) cache.delete(cache.keys().next().value);
+      cache.set(key, clone(result));
+    }
+    return result;
+  }
   const context = Object.freeze({
     observation, config, memory,
     baseline,
@@ -24,8 +43,9 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
     actions: (options) => legalActions(m, ps.playerId, options),
     test: (action) => testAction(m, ps.playerId, action),
     record: (kind, id) => { const value = m.data[kind]?.[id]; return value ? clone(value) : null; },
-    evaluate: (action, options) => evaluateAction(m, ps.playerId, action, options),
-    evaluateSteps: (action, options) => rolloutSteps(m, ps.playerId, action, options),
+    evaluate: (action, options) => runSteps(cachedEvaluateSteps(action, options)),
+    evaluateSteps: (action, options) => cachedEvaluateSteps(action, options),
+    cacheStats,
   });
   try {
     let result;
@@ -60,6 +80,11 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
     if (observe(m, ps.playerId).modelKey !== observation.modelKey) return { action: null, reason: '状态已变化，委托内置 AI', policy: config.policy };
     if (result?.action && testAction(m, ps.playerId, result.action).error) throw new Error('policy returned an illegal action');
     if (!result || !('action' in result)) throw new Error('policy must return an intent, {action}, or null');
+    if (result.search) {
+      result.search.cacheHits = cacheStats.hits;
+      result.search.cacheMisses = cacheStats.misses;
+      result.search.transpositionSize = m._aiTransposition?.size || 0;
+    }
     if (!advice && result.search) {
       const stats = ps.aiSearchStats ||= { decisions: 0, samples: 0, evaluated: 0, truncated: 0 };
       stats.decisions++; stats.samples += result.search.samples; stats.evaluated += result.search.evaluated;
@@ -87,6 +112,39 @@ function preferenceAction(ctx) {
     }
   }
   return null;
+}
+
+/**
+ * One-step decision-tree continuation for global planning. The root action is still evaluated to the terminal horizon,
+ * but at the next decision of the controlled seat this policy compares a few legal choices before handing later work
+ * back to baseline. Other seats deliberately delegate immediately; the observation remains partial-information safe.
+ */
+function globalContinuation({ playerId, sampleSeed, deadline, depth = 1, key = 'global-l1' }) {
+  const seen = new Set();
+  return (ctx) => {
+    if (ctx.observation.self.playerId !== playerId) return null;
+    const node = `${ctx.observation.public.phase}:${ctx.observation.public.round}`;
+    if (seen.has(node) || performance.now() >= deadline) return null;
+    seen.add(node);
+    const base = ctx.baseline();
+    const actions = [base, ...ctx.actions({ placements: false })]
+      .filter(Boolean)
+      .filter((a, i, all) => all.findIndex((b) => JSON.stringify(a) === JSON.stringify(b)) === i)
+      .slice(0, 4);
+    let best = base, bestScore = -Infinity;
+    for (const candidate of actions) {
+      if (performance.now() >= deadline) break;
+      const result = ctx.evaluate(candidate, {
+        sampleSeed,
+        rounds: 1,
+        deadline,
+        continuationKey: `${key}:${node}:${JSON.stringify(candidate)}`,
+        continuationPolicy: depth > 1 ? globalContinuation({ playerId, sampleSeed, deadline, depth: depth - 1, key: `${key}-d${depth - 1}` }) : null,
+      });
+      if (result?.complete && Number.isFinite(result.score) && result.score > bestScore) { best = candidate; bestScore = result.score; }
+    }
+    return best;
+  };
 }
 
 /** Finite-budget Monte Carlo policy improvement with common random samples and baseline continuation. */
@@ -118,7 +176,11 @@ export function* searchSteps(ctx) {
     const sampleSeed = deriveSeed(1, `ai:${o.stateKey}:${sample}`);
     for (const action of actions) {
       if (performance.now() >= deadline) { truncated = true; break; }
-      const r = yield* ctx.evaluateSteps(action, { sampleSeed, rounds, weights: ctx.config.weights || AI_WEIGHTS, deadline });
+      const r = yield* ctx.evaluateSteps(action, {
+        sampleSeed, rounds, weights: ctx.config.weights || AI_WEIGHTS, deadline,
+        continuationPolicy: global ? globalContinuation({ playerId: o.self.playerId, sampleSeed, deadline, depth: 1 }) : null,
+        continuationKey: global ? 'global-l1' : null,
+      });
       evaluated++;
       if (!r.complete || r.errors || !Number.isFinite(r.score)) { truncated = true; break; }
       batch.push(r);
@@ -149,6 +211,7 @@ export function* searchSteps(ctx) {
     reason: global ? `全局规划：从当前选择推演至终局，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按终局综合收益推荐' : '样本不足，使用启发式建议'}${truncated ? '（已到计算预算）' : ''}`
       : shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
         : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
-    search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, global, continuation: 'builtin', proof: false, ranking },
+    search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, global,
+      continuation: global ? 'lookahead-1' : 'builtin', proof: false, ranking },
   };
 }

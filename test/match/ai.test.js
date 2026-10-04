@@ -231,3 +231,15 @@ test('global mode evaluates the current choice against a terminal horizon and re
   assert.match(advice.reason, /全局规划/); assert.ok(advice.search.samples >= 1); assert.ok(advice.action);
   h.m.dispose();
 });
+
+test('completed stochastic evaluations are transposed by visible state, action and sample configuration', () => {
+  const h = prep();
+  const p = h.ps('p_0'); p.aiConfig = { policy: 'search', search: { candidates: 2, samples: 1, rounds: 1, budgetMs: 2000 } };
+  const a = baselineAction(h.m, 'p_0');
+  const first = runSteps(decideSteps(h.m, p, { advice: true }));
+  const size = h.m._aiTransposition.size;
+  assert.ok(size > 0); assert.equal(first.search.cacheMisses, first.search.evaluated); assert.equal(first.search.cacheHits, 0);
+  const second = runSteps(decideSteps(h.m, p, { advice: true }));
+  assert.ok(second.search.cacheHits > 0); assert.equal(h.m._aiTransposition.size, size);
+  assert.ok(a); h.m.dispose();
+});
