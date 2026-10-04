@@ -1043,5 +1043,448 @@
         "ms": 9074
       }
     ]
+  },
+  "coreSearch": {
+    "date": "2026-10-05",
+    "config": {
+      "policy": "search",
+      "coreBondId": "victoriaShip",
+      "weights": {
+        "victory": 100000,
+        "survival": 10000,
+        "rounds": 1000,
+        "lp": 10,
+        "layers": 0.1,
+        "funds": 1
+      },
+      "search": {
+        "candidates": 3,
+        "samples": 2,
+        "rounds": 1,
+        "budgetMs": 1000
+      }
+    },
+    "runs": [
+      {
+        "seed": 1,
+        "difficulty": "FUNNY",
+        "stageId": "act1autochess_m01",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 9,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 10,
+          "samples": 20,
+          "evaluated": 60,
+          "truncated": 0
+        },
+        "ms": 2006
+      },
+      {
+        "seed": 2,
+        "difficulty": "FUNNY",
+        "stageId": "act1autochess_m01",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 9,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 10,
+          "samples": 20,
+          "evaluated": 60,
+          "truncated": 0
+        },
+        "ms": 1930
+      },
+      {
+        "seed": 3,
+        "difficulty": "FUNNY",
+        "stageId": "act1autochess_m01",
+        "bossId": "boss_3",
+        "victory": true,
+        "roundsPassed": 9,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 10,
+          "samples": 20,
+          "evaluated": 60,
+          "truncated": 0
+        },
+        "ms": 1712
+      },
+      {
+        "seed": 4,
+        "difficulty": "FUNNY",
+        "stageId": "act1autochess_m01",
+        "bossId": "boss_4",
+        "victory": true,
+        "roundsPassed": 9,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 10,
+          "samples": 20,
+          "evaluated": 60,
+          "truncated": 0
+        },
+        "ms": 1376
+      },
+      {
+        "seed": 5,
+        "difficulty": "FUNNY",
+        "stageId": "act1autochess_m01",
+        "bossId": "boss_4",
+        "victory": true,
+        "roundsPassed": 9,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 10,
+          "samples": 20,
+          "evaluated": 60,
+          "truncated": 0
+        },
+        "ms": 1391
+      },
+      {
+        "seed": 1,
+        "difficulty": "NORMAL",
+        "stageId": "act1autochess_m03",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 3252
+      },
+      {
+        "seed": 2,
+        "difficulty": "NORMAL",
+        "stageId": "act1autochess_m02",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 3704
+      },
+      {
+        "seed": 3,
+        "difficulty": "NORMAL",
+        "stageId": "act2autochess_m04",
+        "bossId": "boss_3",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 4425
+      },
+      {
+        "seed": 4,
+        "difficulty": "NORMAL",
+        "stageId": "act1autochess_m04",
+        "bossId": "boss_4",
+        "victory": false,
+        "roundsPassed": 13,
+        "reason": "defeat",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 4570
+      },
+      {
+        "seed": 5,
+        "difficulty": "NORMAL",
+        "stageId": "act2autochess_m03",
+        "bossId": "boss_4",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 4303
+      },
+      {
+        "seed": 1,
+        "difficulty": "HARD",
+        "stageId": "act1autochess_m03",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 3693
+      },
+      {
+        "seed": 2,
+        "difficulty": "HARD",
+        "stageId": "act1autochess_m03",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 3722
+      },
+      {
+        "seed": 3,
+        "difficulty": "HARD",
+        "stageId": "act2autochess_m04",
+        "bossId": "boss_3",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 4265
+      },
+      {
+        "seed": 4,
+        "difficulty": "HARD",
+        "stageId": "act1autochess_m04",
+        "bossId": "boss_4",
+        "victory": false,
+        "roundsPassed": 13,
+        "reason": "defeat",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 5170
+      },
+      {
+        "seed": 5,
+        "difficulty": "HARD",
+        "stageId": "act2autochess_m03",
+        "bossId": "boss_4",
+        "victory": false,
+        "roundsPassed": 13,
+        "reason": "defeat",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 4831
+      },
+      {
+        "seed": 1,
+        "difficulty": "ABYSS",
+        "stageId": "act1autochess_m03",
+        "bossId": "boss_5",
+        "victory": false,
+        "roundsPassed": 13,
+        "reason": "defeat",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 4066
+      },
+      {
+        "seed": 2,
+        "difficulty": "ABYSS",
+        "stageId": "act1autochess_m03",
+        "bossId": "boss_5",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 3964
+      },
+      {
+        "seed": 3,
+        "difficulty": "ABYSS",
+        "stageId": "act2autochess_m04",
+        "bossId": "boss_3",
+        "victory": true,
+        "roundsPassed": 14,
+        "reason": "victory",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 4418
+      },
+      {
+        "seed": 4,
+        "difficulty": "ABYSS",
+        "stageId": "act1autochess_m04",
+        "bossId": "boss_4",
+        "victory": false,
+        "roundsPassed": 12,
+        "reason": "eliminated",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 17,
+          "samples": 34,
+          "evaluated": 102,
+          "truncated": 0
+        },
+        "ms": 4504
+      },
+      {
+        "seed": 5,
+        "difficulty": "ABYSS",
+        "stageId": "act2autochess_m03",
+        "bossId": "boss_4",
+        "victory": false,
+        "roundsPassed": 13,
+        "reason": "defeat",
+        "errors": 0,
+        "simErrors": 0,
+        "metaErrors": 0,
+        "violations": [],
+        "aiFailures": 0,
+        "aiSearch": {
+          "decisions": 18,
+          "samples": 36,
+          "evaluated": 108,
+          "truncated": 0
+        },
+        "ms": 4880
+      }
+    ]
   }
 }

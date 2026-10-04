@@ -5,7 +5,7 @@ import { DIRS, validateC2S } from '../../shared/protocol.js';
 import { createRng, deriveSeed } from '../sim/rng.js';
 import { VirtualScheduler } from '../match/scheduler.js';
 import { EffectDispatcher } from '../match/effectsMeta.js';
-import { botPickBand, botPickCard, botPrepBeginSteps, botPrepEndSteps } from '../match/bot.js';
+import { botPickBand, botPickCard, botPrepBeginSteps, botPrepEndSteps, shopBuyScores } from '../match/bot.js';
 
 const DECISIONS = new Set([PHASE.INFO_CHECK, PHASE.BAND_DRAFT, PHASE.SP_DRAFT, PHASE.PREP]);
 const noLog = { info() {}, debug() {}, warn() {}, error() {} };
@@ -81,6 +81,11 @@ export function applyAIAction(m, playerId, action) {
 export function testAction(m, playerId, action) {
   const f = forkDecision(m);
   try { return applyAIAction(f, playerId, action); } finally { f.dispose(); }
+}
+
+export function purchaseScores(m, playerId) {
+  const f = forkDecision(m);
+  try { return shopBuyScores(f, f.players.get(playerId)); } finally { f.dispose(); }
 }
 
 /** All ordinary decision intents. Board moves/Arts can be omitted for a small economy/draft candidate set. */
@@ -175,7 +180,9 @@ export function scoreState(m, playerId, weights = {}) {
   const p = m.players.get(playerId), w = { ...AI_WEIGHTS, ...weights };
   const victory = !!m.outcome?.victory;
   const rounds = p.eliminatedRound == null ? Math.max(0, m.round - 1) : Math.max(0, p.eliminatedRound - 1);
-  return (victory ? w.victory : 0) + (p.alive ? w.survival : 0) + rounds * w.rounds + p.lp * w.lp + Object.values(p.layers).reduce((a, b) => a + b, 0) * w.layers + p.funds * w.funds;
+  const core = p.aiConfig?.coreBondId && p.bonds[p.aiConfig.coreBondId];
+  return (victory ? w.victory : 0) + (p.alive ? w.survival : 0) + rounds * w.rounds + p.lp * w.lp + Object.values(p.layers).reduce((a, b) => a + b, 0) * w.layers + p.funds * w.funds
+    + (core ? (core.count || 0) * w.coreMembers + (core.tier || 0) * w.coreTier + (core.layers || 0) * w.coreLayers : 0);
 }
 
 /** A single sampled continuation. Each yield is one virtual scheduler callback, allowing live room time slicing. */
@@ -188,7 +195,7 @@ export function* rolloutSteps(m, playerId, action, { sampleSeed = 1, rounds = 1,
       const applied = applyAIAction(f, playerId, plan[index]);
       if (applied.error) return { ...applied, index, complete: false, score: null, sampleSeed };
     }
-    for (const p of f.order) { p.autoplay = true; p.aiConfig = { policy: 'builtin' }; p.aiMemory = {}; }
+    for (const p of f.order) { p.autoplay = true; p.aiConfig = { policy: 'builtin', ...(p.playerId === playerId && p.aiConfig.coreBondId ? { coreBondId: p.aiConfig.coreBondId } : {}) }; p.aiMemory = {}; }
     if (f.phase === PHASE.INFO_CHECK) { for (const p of f.order) p.infoReady = true; f.maybeEndInfo(); }
     else if (f.phase === PHASE.PREP) { for (const p of f.order) if (p.alive && !p.ready) f.kickBot(p); f.maybeEndPrep(); }
     else if (f.phase === PHASE.BAND_DRAFT || f.phase === PHASE.SP_DRAFT) for (const p of f.order) f.kickBot(p);
@@ -198,7 +205,10 @@ export function* rolloutSteps(m, playerId, action, { sampleSeed = 1, rounds = 1,
       if (performance.now() >= deadline || !f.sched.runNext()) break;
       yield;
     }
-    return { complete, score: complete ? scoreState(f, playerId, weights) : null, round: f.round, alive: f.players.get(playerId).alive, victory: !!f.outcome?.victory, errors: f.errorCount + f.simErrors + f.dispatcher.errors, sampleSeed };
+    const ps = f.players.get(playerId);
+    return { complete, score: complete ? scoreState(f, playerId, weights) : null, round: f.round, alive: ps.alive, lp: ps.lp, terminal: f.ended, victory: !!f.outcome?.victory,
+      core: ps.aiConfig.coreBondId ? { id: ps.aiConfig.coreBondId, ...ps.bonds[ps.aiConfig.coreBondId] } : null,
+      errors: f.errorCount + f.simErrors + f.dispatcher.errors, sampleSeed };
   } finally { f.dispose(); }
 }
 

@@ -1,7 +1,7 @@
 import { AI_DEFAULT, AI_WEIGHTS, checkAIConfig } from '../../shared/ai.js';
 import { PHASE } from '../../shared/constants.js';
 import { deriveSeed } from '../sim/rng.js';
-import { observe, baselineAction, legalActions, testAction, rolloutSteps, evaluateAction } from './model.js';
+import { observe, baselineAction, legalActions, testAction, rolloutSteps, evaluateAction, purchaseScores } from './model.js';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 function freeze(x) { if (x && typeof x === 'object') { Object.freeze(x); for (const v of Object.values(x)) freeze(v); } return x; }
@@ -20,6 +20,7 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
   const context = Object.freeze({
     observation, config, memory,
     baseline,
+    purchaseScores: () => purchaseScores(m, ps.playerId),
     actions: (options) => legalActions(m, ps.playerId, options),
     test: (action) => testAction(m, ps.playerId, action),
     record: (kind, id) => { const value = m.data[kind]?.[id]; return value ? clone(value) : null; },
@@ -46,9 +47,10 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
       if (result == null) return { action: advice ? baseline() : null, reason: '自定义策略委托内置 AI', policy: 'custom' };
       result = result.t ? { action: result, reason: '自定义 AI 推荐' } : result;
     } else {
-      const preferred = preferenceAction(context);
+      const coreShopping = config.coreBondId && observation.public.phase === PHASE.PREP;
+      const preferred = coreShopping ? null : preferenceAction(context);
       if (preferred) result = { action: preferred, reason: '按你的策略与干员偏好选择', policy: config.policy };
-      else if (config.policy === 'search') {
+      else if (config.policy === 'search' || (coreShopping && advice)) {
         const key = `${observation.public.phase}:${observation.public.round}`;
         if (!advice && memory.searchTurn === key) return { action: null, reason: '本阶段搜索完成，委托内置 AI', policy: 'search' };
         result = yield* searchSteps(context);
@@ -89,39 +91,62 @@ function preferenceAction(ctx) {
 
 /** Finite-budget Monte Carlo policy improvement with common random samples and baseline continuation. */
 export function* searchSteps(ctx) {
-  const o = ctx.observation, base = ctx.baseline();
+  const o = ctx.observation, base = ctx.baseline(), coreBondId = ctx.config.coreBondId;
   if (!base) return { action: null, policy: 'search', reason: '当前无需决策' };
-  const { candidates = 3, samples = 2, rounds = 1, budgetMs = 200 } = ctx.config.search || {};
+  const shopping = !!coreBondId && o.public.phase === PHASE.PREP && !o.self.shop.rewardOffer;
+  const coreName = coreBondId ? ctx.record('bonds', coreBondId)?.name || coreBondId : '';
+  const { candidates = shopping ? 4 : 3, samples = shopping ? 8 : 2, rounds = 1, budgetMs = shopping ? 5000 : 200 } = ctx.config.search || {};
   const deadline = performance.now() + budgetMs;
+  const available = ctx.actions({ placements: false });
+  const values = shopping ? new Map(ctx.purchaseScores().map((x) => [x.slot, x.value])) : null;
   const rank = (a) => {
-    if (a.t === 'g.band') { const b = ctx.record('bands', a.bandId); return b?.totalHp || 0; }
+    if (shopping && a.t === 'g.buy') return values.get(a.slot) ?? -1e9;
+    if (a.t === 'g.band') { const b = ctx.record('bands', a.bandId); return (b?.totalHp || 0) + (coreBondId && b?.bondIds?.includes(coreBondId) ? 30 : 0); }
     if (a.t === 'g.buy') { const s = o.self.shop.slots[a.slot]; return s?.kind === 'chess' ? 10 + (ctx.record('chess', s.id)?.tier || 1) : 5; }
     return { 'g.reward': 50, 'g.choice': 20, 'g.levelUp': 9, 'g.refresh': 1 }[a.t] || 0;
   };
-  const options = [base, ...ctx.actions({ placements: false }).filter((a) => ['g.band', 'g.choice', 'g.reward', 'g.buy', 'g.levelUp', 'g.refresh'].includes(a.t)).sort((a, b) => rank(b) - rank(a))];
+  const options = shopping
+    ? available.filter((a) => a.t === 'g.buy' && rank(a) >= 3).sort((a, b) => rank(b) - rank(a))
+    : [base, ...available.filter((a) => ['g.band', 'g.choice', 'g.reward', 'g.buy', 'g.levelUp', 'g.refresh'].includes(a.t)).sort((a, b) => rank(b) - rank(a))];
   const seen = new Set(), actions = options.filter((a) => { const k = JSON.stringify(a); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, candidates);
-  const sums = actions.map(() => 0);
+  if (!actions.length) return { action: base, policy: 'search', coreBondId, shopRecommendations: [], reason: `围绕【${coreName}】，本店暂无值得购买的卡片；按阵容需要继续整备` };
+  const outcomes = actions.map(() => []);
   let completed = 0, evaluated = 0, truncated = false;
   for (let sample = 0; sample < samples; sample++) {
-    const scores = [];
-    // The observation hash, not the actual match seed/RNG state, determines the planning samples.
+    const batch = [];
     const sampleSeed = deriveSeed(1, `ai:${o.stateKey}:${sample}`);
     for (const action of actions) {
       if (performance.now() >= deadline) { truncated = true; break; }
       const r = yield* ctx.evaluateSteps(action, { sampleSeed, rounds, weights: ctx.config.weights || AI_WEIGHTS, deadline });
       evaluated++;
       if (!r.complete || r.errors || !Number.isFinite(r.score)) { truncated = true; break; }
-      scores.push(r.score);
+      batch.push(r);
     }
-    // A partial sample cannot compare choices fairly. Only complete batches affect the ranking.
-    if (scores.length !== actions.length) break;
-    scores.forEach((s, i) => { sums[i] += s; }); completed++;
+    // Only a complete common-sample batch contributes to any candidate's statistics.
+    if (batch.length !== actions.length) break;
+    batch.forEach((r, i) => outcomes[i].push(r)); completed++;
   }
+  const ranking = completed ? actions.map((action, i) => {
+    const rows = outcomes[i], score = rows.reduce((s, r) => s + r.score, 0) / completed;
+    const deviation = completed > 1 ? Math.sqrt(rows.reduce((s, r) => s + (r.score - score) ** 2, 0) / (completed - 1)) : 0;
+    const alive = rows.filter((r) => r.alive).length;
+    return { action, score, deviation, alive, survivalRate: alive / completed, meanLp: rows.reduce((s, r) => s + r.lp, 0) / completed,
+      terminal: rows.every((r) => r.terminal), winRate: rows.filter((r) => r.victory).length / completed };
+  }) : [];
+  const sufficient = completed >= (shopping ? 2 : 1);
   let best = 0;
-  for (let i = 1; i < sums.length; i++) if (sums[i] > sums[best]) best = i;
+  if (sufficient) for (let i = 1; i < ranking.length; i++) if (ranking[i].score > ranking[best].score) best = i;
+  const shopRecommendations = shopping ? actions.map((a, i) => {
+    const slot = o.self.shop.slots[a.slot];
+    const fit = slot.kind === 'chess' ? ctx.record('chess', slot.id)?.bonds?.includes(coreBondId) : ctx.record('items', slot.id)?.giveBondId === coreBondId;
+    return { slot: a.slot, id: slot.id, recommended: i === best, coreFit: !!fit, heuristic: rank(a), samples: completed,
+      basis: sufficient ? 'simulation' : 'build', ...(ranking[i] || {}),
+      reason: `${fit ? `补强【${coreName}】` : '补足阵容、装备或合成需求'}；${sufficient ? `${completed} 个随机样本的平均收益比较` : '样本不足，按构筑价值推荐'}` };
+  }) : [];
   return {
-    action: actions[best], policy: 'search',
-    reason: completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
-    search: { samples: completed, evaluated, candidates: actions.length, truncated, ranking: completed ? actions.map((action, i) => ({ action, score: sums[i] / completed })) : [] },
+    action: actions[best], policy: 'search', ...(coreBondId ? { coreBondId, shopRecommendations } : {}),
+    reason: shopping ? `围绕【${coreName}】，完成 ${completed}/${samples} 组共同随机样本；${sufficient ? '按平均收益推荐购买' : '样本不足，使用构筑建议'}${truncated ? '（已到计算预算）' : ''}`
+      : completed ? `随机推演 ${completed} 组共同样本，比较 ${actions.length} 个选择${truncated ? '；已到计算预算' : ''}` : '计算预算内未完成比较，采用内置 AI 建议',
+    search: { samples: completed, requestedSamples: samples, evaluated, candidates: actions.length, rounds, truncated, sufficient, ranking },
   };
 }

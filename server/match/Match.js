@@ -1118,6 +1118,7 @@ export class Match {
   setAIConfig(ps, config) {
     if (!checkAIConfig(config)) return fail(ERR.BAD_MSG, 'invalid AI configuration');
     if (!ps.alive) return fail(ERR.ELIMINATED);
+    if (config.coreBondId && (!this.gd.bond(config.coreBondId)?.isCore || this.gd.modeInactiveBonds.has(config.coreBondId) || this.disabledBonds.includes(config.coreBondId))) return fail(ERR.BAD_TARGET, 'core bond unavailable in this match');
     if (config.preferredBands?.some((id) => !this.gd.band(id)) || config.preferredChess?.some((id) => !this.gd.chess(id) || this.gd.isGolden(id))) return fail(ERR.BAD_TARGET, 'unknown preferred band or base chess');
     ps.aiConfig = JSON.parse(JSON.stringify(config));
     ps.aiMemory = {};
@@ -1159,14 +1160,15 @@ export class Match {
     const observation = observe(this, ps.playerId);
     const token = ps._aiAdviceToken = (ps._aiAdviceToken || 0) + 1;
     const phase = this.phase, round = this.round;
-    const valid = () => token === ps._aiAdviceToken && this.phase === phase && this.round === round && !ps.botControlled && ps.alive;
+    const valid = () => token === ps._aiAdviceToken && this.phase === phase && this.round === round && !ps.botControlled && ps.alive && observe(this, ps.playerId).modelKey === observation.modelKey;
     this.driveAI(decideSteps(this, ps, { advice: true }), valid, (result) => {
       if (this.disposed || this.ended) return;
       const stale = !valid() || observe(this, ps.playerId).modelKey !== observation.modelKey;
       ps._aiLastAdvice = stale || !result?.action ? null : { seq, stateKey: observation.stateKey, modelKey: observation.modelKey, action: JSON.parse(JSON.stringify(result.action)) };
       this.sendTo(ps.playerId, { t: 'm.advice', version: AI_VERSION, seq, stateKey: observation.stateKey,
         action: stale ? null : result?.action || null, reason: stale ? '状态已变化，请重新获取建议' : result?.reason || '当前无需决策',
-        policy: result?.policy || ps.aiConfig.policy, stale, ...(result?.search ? { search: result.search } : {}) });
+        policy: result?.policy || ps.aiConfig.policy, stale, ...(result?.search ? { search: result.search } : {}),
+        ...(result?.coreBondId ? { coreBondId: result.coreBondId, shopRecommendations: stale ? [] : result.shopRecommendations || [] } : {}) });
     });
     return OK;
   }

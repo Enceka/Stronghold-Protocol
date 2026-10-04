@@ -13,3 +13,19 @@
 .ai-assistant summary { cursor: pointer; margin-bottom: .12rem; }
 .ai-assistant label { display: block; margin: .12rem 0 .06rem; }
 .ai-assistant textarea { box-sizing: border-box; width: 100%; resize: vertical; min-height: 120px; max-height: 200px; padding: 10px; color: #dce8df; background: #101713; border: 1px solid #526559; font: max(.13rem, 12px)/1.5 monospace; margin-bottom: 10px; }
+.ai-core-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.ai-core-controls label { margin: 0; }
+.ai-core-controls label[for="ai-samples"] { grid-column: 2; grid-row: 1; }
+.ai-core-controls select { color: #dce8df; background: #101713; padding: 8px; border: 1px solid #526559; font: inherit; min-width: 0; }
+.ai-core-controls .btn { grid-column: 1 / -1; }
+.ai-comparison { overflow-x: auto; }
+.ai-comparison table { width: 100%; border-collapse: collapse; font-size: inherit; }
+.ai-comparison th, .ai-comparison td { padding: 6px; text-align: left; border-bottom: 1px solid #38443d; white-space: nowrap; }
+.ai-comparison tr.is-recommended { color: #4ed8af; }
+.shopbar__ai-core { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; color: #4ed8af; border: 1px solid #526559; background: #101713; font-size: max(.12rem, 10px); white-space: nowrap; }
+.shopbar__ai-core .icon { width: 14px; height: 14px; }
+.scard.is-ai-recommended { border-color: #4ed8af; }
+.scard__ai-edge { position: absolute; inset: 1px; z-index: 6; border: 2px solid #4ed8af; box-shadow: inset 0 0 10px #4ed8af66; pointer-events: none; animation: ai-card-pulse 1.8s ease-in-out infinite; }
+.scard__ai-label { position: absolute; top: .48rem; left: 4px; max-width: calc(100% - 8px); z-index: 7; padding: 2px 4px; color: #092419; background: #4ed8af; font-size: max(.11rem, 9px); font-weight: 700; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; pointer-events: none; }
+@keyframes ai-card-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scard__ai-edge { animation: none; opacity: 1; } }

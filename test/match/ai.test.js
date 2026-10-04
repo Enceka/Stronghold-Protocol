@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeMatch, give, giveItem, chessOfTier, legalTileFor, DATA } from './harness.js';
 import { createRng } from '../../server/sim/rng.js';
-import { observe, forkDecision, baselineAction, legalActions, testAction, applyAIAction, evaluateAction, rolloutSteps, runSteps } from '../../server/ai/model.js';
+import { observe, forkDecision, baselineAction, legalActions, testAction, applyAIAction, evaluateAction, rolloutSteps, runSteps, purchaseScores } from '../../server/ai/model.js';
 import { decideSteps } from '../../server/ai/policy.js';
 import { aiStateKey, checkAIConfig } from '../../shared/ai.js';
 import { validateC2S } from '../../shared/protocol.js';
@@ -209,4 +209,16 @@ test('preferences pick the configured strategy and run a full real game using ba
   h.m.order[0].aiConfig = { policy: 'preferences', preferredBands: ['band_bldsk'] };
   h.runToEnd(); assert.equal(h.m.order[0].bandId, 'band_bldsk'); assert.equal(h.m.errorCount, 0); assert.equal(h.m.order[0].aiFailures, 0);
   h.invariants(); h.m.dispose();
+});
+
+test('core-bond target drives focus, validates disabled bonds, scores shop cards and returns sampled comparisons', () => {
+  const h = prep();
+  assert.equal(h.m.handle('p_0', { t: 'g.aiConfig', config: { policy: 'search', coreBondId: 'victoriaShip', search: { candidates: 3, samples: 4, budgetMs: 2000 } } }).error, undefined);
+  assert.equal(h.ps('p_0').aiConfig.coreBondId, 'victoriaShip');
+  const scores = purchaseScores(h.m, 'p_0'); assert.equal(scores.length, 4); assert.ok(scores.some((x) => x.value > 0));
+  const advice = runSteps(decideSteps(h.m, h.ps('p_0'), { advice: true }));
+  assert.equal(advice.coreBondId, 'victoriaShip'); assert.ok(advice.shopRecommendations.length > 0);
+  assert.equal(advice.search.samples, 4); assert.ok(advice.shopRecommendations.some((x) => x.recommended && x.basis === 'simulation'));
+  assert.ok(h.m.handle('p_0', { t: 'g.aiConfig', config: { policy: 'search', coreBondId: 'lateranoShip' } }).error === 'BAD_TARGET');
+  h.m.dispose();
 });

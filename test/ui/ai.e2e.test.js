@@ -57,6 +57,15 @@ test('AI assistant: recommend and apply, reject stale advice, save config, and s
     await page.keyboard.type('{"policy":"preferences","preferredBands":["band_bldsk"]}');
     await clickText('保存并应用到本局');
     await page.waitForFunction(() => __SP__.store.get().match.private?.aiConfig?.policy === 'preferences');
+    // Choosing a core in the assistant makes the next shop evaluation eligible for card-edge recommendations.
+    const coreOptions = await page.$$eval('#ai-core-bond option:not([disabled])', (xs) => xs.map((x) => x.value).filter(Boolean));
+    if (coreOptions.length) {
+      await page.select('#ai-core-bond', coreOptions[0]);
+      await clickText('应用构筑目标');
+      await page.waitForFunction(() => __SP__.store.get().match.private?.aiConfig?.coreBondId === document.querySelector('#ai-core-bond')?.value);
+      await new Promise((r) => setTimeout(r, 6500));
+      assert.ok(await page.$('[data-ai-slot]'), 'a simulated shop recommendation highlights a card');
+    }
     // Phone-size modal remains inside the viewport and scrolls vertically.
     await page.setViewport({ width: 844, height: 390 });
     await new Promise((r) => setTimeout(r, 250));

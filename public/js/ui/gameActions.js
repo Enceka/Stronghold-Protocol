@@ -70,7 +70,7 @@ export const actions = {
   watch: (fieldId) => act('g.watch', { fieldId }, { sfx: 'tab' }),
   autoplay: (on) => act('g.autoplay', { on }),
   aiConfig: (config) => act('g.aiConfig', { config }),
-  advice: (seq) => act('g.advice', { seq }),
+  advice: (seq, opts) => act('g.advice', { seq }, opts),
   aiApply: (seq, stateKey) => act('g.aiApply', { seq, stateKey }),
   // solo battles only (ui/matchStatus.js pauseAvailable): m.public.paused follows
   pause: (on) => act('g.pause', { on: !!on }, { sfx: on ? 'click' : 'confirm' }),

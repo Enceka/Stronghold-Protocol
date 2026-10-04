@@ -343,7 +343,9 @@ function mainCoreBond(m, p) {
  * across rounds.
  */
 export function bondPlan(m, ps, owned = ownedBonds(m, ps)) {
-  const key = `${m.round}|${ps.shop.level}|${[...owned.counts.entries()].map(([k, v]) => k + v).join()}`;
+  const requested = ps.aiConfig?.coreBondId;
+  const core = requested && m.gd.bond(requested)?.isCore && !m.gd.modeInactiveBonds.has(requested) && !m.disabledBonds.includes(requested) ? requested : null;
+  const key = `${m.round}|${ps.shop.level}|${core || ''}|${[...owned.counts.entries()].map(([k, v]) => k + v).join()}`;
   if (ps._botFocus && ps._botFocus.key === key) return ps._botFocus;
   const prev = ps._botFocusId ?? null;
   const mates = new Set();
@@ -365,6 +367,7 @@ export function bondPlan(m, ps, owned = ownedBonds(m, ps)) {
     if (s > bestS) { bestS = s; focus = id; }
   }
   let second = null;
+  if (core) focus = core;
   let bestK = 0;
   for (const id of m.gd.bondIds) {
     if (id === focus || m.gd.modeInactiveBonds.has(id)) continue;
@@ -1160,6 +1163,18 @@ function context(m, ps) {
   let pairs = 0;
   for (const [b, k] of copies) if (k + 1 >= mergeNeed(m, b)) pairs++;
   return { owned, focus: plan.focus, second: plan.second, keep: keeperBases(m, ps, plan), copies, pairs, roles: roles(m, ps), fly: model.flyTotal, model };
+}
+
+/** Current shop acquisition scores, including the player's chosen core, role needs and merge progress. */
+export function shopBuyScores(m, ps) {
+  const ctx = context(m, ps), core = ps.aiConfig?.coreBondId;
+  return ps.shop.slots.map((s, slot) => {
+    if (!s || s.sold) return { slot, value: -1e9 };
+    const value = s.kind === 'chess' ? buyScore(m, ps, s.id, ctx) - ps.priceOf(s)
+      : canUseItem(m, ps, s) ? 6 + m.gd.tierOf(s.id) * 3 - ps.priceOf(s) + (ps.completesItemMerge(s.id) ? 10 : 0)
+        + (core && m.gd.item(s.id)?.giveBondId === core ? 15 : 0) : -1e9;
+    return { slot, value };
+  });
 }
 
 /** Normal copies owned per base (board, hand, temp). */
