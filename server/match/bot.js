@@ -82,6 +82,7 @@ import { rotateOffset, normDir, mirrorDir, oppositeDir } from '../sim/dir.js';
 import { itemKey } from './gamedata.js';
 import { computeBonds } from './bondsMeta.js';
 import { withBounties, isFlyKey } from './waves.js';
+import { SharedBossPool, bossPoolHp } from './finalAssault.js';
 import { mitigate } from '../sim/damage.js';
 import { HOVER_KEYS } from '../sim/content/enemies.js';
 import { attackRangeGrid, loadoutRecord, resolveRecordLoadout } from '../../shared/loadoutRecord.js';
@@ -1042,7 +1043,8 @@ export function createRehearsal(m, ps, chosen, plans) {
  * two steps (the prep ended) never leaves a rehearsal layout on the board.
  */
 export function* createRehearsalSteps(m, ps, chosen, plans) {
-  const wave = m.wave;
+  const bossScenario = !m.wave ? bossWaveOf(m, ps) : null;
+  const wave = m.wave || bossScenario?.wave;
   const distinct = distinctPlans(plans);
   if (!wave || distinct.length < 2 || !(m.botRehearsal > 0)) return null;
   const cands = distinct.slice(0, m.botRehearsal);
@@ -1057,11 +1059,16 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
       ps.board.clear();
       for (const [uid, k] of plan) { const p = byUid.get(uid); if (p) { p.dir = planDir(plan, uid); ps.board.set(k, p); } }
       ps.recompute();
-      const spawns = withBounties(m.gd, m.round, wave, ps.bounties, ps.playerId).map((sp) => ({ ...sp, ownerPlayerId: ps.playerId }));
+      const boss = !!bossScenario;
+      const side = bossScenario?.side === 'R' ? 'R' : 'L';
+      const spawns = boss ? wave.spawns.map((sp) => ({ ...sp, ownerPlayerId: ps.playerId }))
+        : withBounties(m.gd, m.round, wave, ps.bounties, ps.playerId).map((sp) => ({ ...sp, ownerPlayerId: ps.playerId }));
+      const sharedBoss = boss ? new SharedBossPool(bossPoolHp(m.gd, m.round === m.gd.hiddenRound ? m.hiddenBossId : m.bossId, 1)) : null;
       battles.push(m.newBattle({
-        seed: deriveSeed(m.seed, `rehearse:${m.round}:${ps.seat}`), kind: 'normal', modeId: m.modeId, round: m.round,
-        stageId: m.stageId, rect: { ...GEO.NORMAL_RECT }, timeLimit: wave.timeLimit, players: [ps.battleInput({ side: 'L', colOffset: 0 })],
-        spawns: m._sanitizeSpawns(spawns, ps.playerId), routes: wave.routes, sharedBoss: null,
+        seed: deriveSeed(m.seed, `rehearse:${m.round}:${ps.seat}`), kind: boss ? 'boss' : 'normal', modeId: m.modeId, round: m.round,
+        stageId: m.stageId, rect: boss ? { ...GEO.BOSS_RECT } : { ...GEO.NORMAL_RECT }, timeLimit: boss ? 180 : wave.timeLimit,
+        players: [ps.battleInput({ side, colOffset: side === 'R' ? 8 : 0 })],
+        spawns: m._sanitizeSpawns(spawns, ps.playerId), routes: wave.routes, sharedBoss,
         flags: { layerGainsEnabled: false, ...m.gd.dp }, fieldId: `r:${ps.playerId}`, enemyOverrides: wave.overrides, waveId: wave.templateId,
       }));
     } catch (e) {
@@ -1076,7 +1083,7 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
     if (failed) break;
     yield;
   }
-  const cap = Math.ceil(((wave.timeLimit || 60) + 5) * 30);
+  const cap = Math.ceil(((bossScenario ? 180 : (wave.timeLimit || 60)) + 5) * 30);
   let i = 0;
   let t = 0;
   let bestScore = -Infinity;
@@ -1101,16 +1108,18 @@ export function* createRehearsalSteps(m, ps, chosen, plans) {
             battle.step();
             t++;
             n++;
-            if ((t & 63) === 0 && bestLeaks < Infinity && countedLeaks(battle, ps.playerId) > bestLeaks) { beaten = true; break; }
+            if (!bossScenario && (t & 63) === 0 && bestLeaks < Infinity && countedLeaks(battle, ps.playerId) > bestLeaks) { beaten = true; break; }
             if (timed && (n & 3) === 0 && performance.now() - t0 >= budgetMs) return false;
           }
           if (!beaten) {
             if (!battle.finished) battle.forceEnd('timeout');
             const r = battle.result();
             const pp = r && !r.synthetic && r.perPlayer && r.perPlayer[ps.playerId];
-            if (pp) {
-              const leaks = (pp.leaked || []).filter((l) => l && l.counted !== false).length;
-              const score = -leaks * 1000 + (pp.killed || 0) - i * 0.01;
+            const leaks = pp ? (pp.leaked || []).filter((l) => l && l.counted !== false).length : 0;
+            const bossLeft = bossScenario ? Number.isFinite(r && r.bossHpLeft) ? r.bossHpLeft : Infinity : 0;
+            if (pp || bossScenario) {
+              const score = bossScenario ? -bossLeft * 1000 - leaks * 10000 + (pp?.killed || 0) - i * 0.01
+                : -leaks * 1000 + (pp?.killed || 0) - i * 0.01;
               if (score > bestScore) { bestScore = score; bestLeaks = leaks; job.best = cands[i]; }
             }
           }
@@ -1537,7 +1546,7 @@ export function* arrangeSteps(m, ps, { final = false, defer = false } = {}) {
   }
   yield;
   const plans = [];
-  if (final && m.wave && m.botRehearsal > 0) {
+  if (final && (m.wave || bossWaveOf(m, ps)) && m.botRehearsal > 0) {
     for (const v of REHEARSAL_VARIANTS) plans.push(yield* planLayoutSteps(m, ps, chosen, { ...LAYOUT_PARAMS, ...v }));
   } else {
     plans.push(yield* planLayoutSteps(m, ps, chosen));

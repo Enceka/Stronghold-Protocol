@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeMatch, give, giveItem, chessOfTier, legalTileFor, DATA } from './harness.js';
 import { createRng } from '../../server/sim/rng.js';
-import { observe, forkDecision, baselineAction, legalActions, testAction, applyAIAction, evaluateAction, rolloutSteps, runSteps, purchaseScores } from '../../server/ai/model.js';
+import { observe, forkDecision, baselineAction, legalActions, testAction, applyAIAction, evaluateAction, rolloutSteps, runSteps, purchaseScores, scoreState } from '../../server/ai/model.js';
 import { decideSteps } from '../../server/ai/policy.js';
 import { aiStateKey, checkAIConfig } from '../../shared/ai.js';
 import { validateC2S } from '../../shared/protocol.js';
@@ -251,4 +251,31 @@ test('global risk mode ranks by a lower-tail objective and exposes CVaR diagnost
   assert.equal(advice.search.objective, 'cvar-lower-tail'); assert.equal(advice.search.risk, 25);
   assert.ok(advice.search.ranking.every((x) => Number.isFinite(x.cvar) && x.riskAdjustedScore === x.cvar));
   h.m.dispose();
+});
+
+test('global autoplay yields to baseline after its per-prep action budget', () => {
+  const h = prep();
+  const p = h.ps('p_0'); p.aiConfig = { policy: 'global', search: { candidates: 1, samples: 1, rounds: 1, budgetMs: 100, maxActions: 1 } };
+  p.autoplay = true;
+  const first = runSteps(decideSteps(h.m, p));
+  assert.ok(first.action); assert.equal(p.aiMemory.globalActions, 1);
+  const second = runSteps(decideSteps(h.m, p));
+  assert.equal(second.action, null); assert.match(second.reason, /交回内置 AI/); h.m.dispose();
+});
+
+test('global autoCore selects an available core and persists it for later prep decisions', () => {
+  const h = prep();
+  const p = h.ps('p_0'); p.aiConfig = { policy: 'global', autoCore: true, search: { candidates: 1, samples: 1, rounds: 1, budgetMs: 100 } };
+  runSteps(decideSteps(h.m, p));
+  assert.ok(p.aiConfig.coreBondId); assert.equal(h.m.gd.bond(p.aiConfig.coreBondId).isCore, true); assert.equal(h.m.disabledBonds.includes(p.aiConfig.coreBondId), false);
+  h.m.dispose();
+});
+
+test('terminal score includes damage already dealt to a boss pool when victory is not reached', () => {
+  const h = prep();
+  const f = forkDecision(h.m, { sampleSeed: 1, playerId: 'p_0' });
+  f.bossPool = { maxHp: 1000, hp: 400 };
+  f.players.get('p_0').aiConfig = { policy: 'global' };
+  const score = scoreState(f, 'p_0', { bossDamage: 1 });
+  assert.ok(score >= 600); f.dispose(); h.m.dispose();
 });

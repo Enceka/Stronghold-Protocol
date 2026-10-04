@@ -141,7 +141,14 @@ function runOne(seed, difficulty) {
     BattleClass: opt.errors && canCount ? CountingBattle : undefined,
     send: () => { frames++; return true; }, broadcast: () => {}, onEnd: (s) => { summary = s; },
   });
-  for (const ps of m.order) ps.aiConfig = JSON.parse(JSON.stringify(aiConfig));
+  for (const ps of m.order) {
+    const cfg = JSON.parse(JSON.stringify(aiConfig));
+    if (cfg.coreBondId && (!m.gd.bond(cfg.coreBondId)?.isCore || m.gd.modeInactiveBonds.has(cfg.coreBondId) || m.disabledBonds.includes(cfg.coreBondId))) {
+      m.dispose();
+      throw new Error(`--ai-config coreBondId ${cfg.coreBondId} is unavailable for ${difficulty} seed ${seed}`);
+    }
+    ps.aiConfig = cfg;
+  }
   for (const ps of m.players.values()) if (!ps.isBot) ps.autoplay = true;
   const audit = opt.check || opt.odds ? attachAudit(m, { invariants: !!opt.check }) : null;
   const rounds = [];

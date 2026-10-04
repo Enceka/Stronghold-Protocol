@@ -10,10 +10,39 @@ export function policyFailure(m, ps, detail) {
   m.log.warn?.(`[match ${m.roomCode}] AI ${ps.playerId}: ${detail}; using builtin`);
 }
 
+/** Choose an available core for autonomous global planning; explicit coreBondId always wins. */
+function autoCoreBond(m, ps) {
+  let best = null, bestScore = -Infinity;
+  for (const id of m.gd.bondIds) {
+    const bond = m.gd.bond(id);
+    if (!bond?.isCore || m.gd.modeInactiveBonds.has(id) || m.disabledBonds.includes(id) || !m.bondInPool(id)) continue;
+    let supply = 0, reachable = 0, owned = ps.bonds?.[id]?.count || 0;
+    for (const [cid, e] of m.pool.entries) {
+      if (!(e.left > 0)) continue;
+      const c = m.gd.chess(cid);
+      if (!c?.bonds?.includes(id)) continue;
+      supply += e.left * (c.tier <= ps.shop.level + 1 ? 1 : 0.2);
+      if (c.tier <= ps.shop.level + 1) reachable++;
+    }
+    const threshold = Array.isArray(bond.thresholds) ? bond.thresholds[0] || 3 : 3;
+    const score = owned * 40 + reachable * 12 + supply * 0.08 - Math.max(0, threshold - owned) * 2;
+    if (score > bestScore) { bestScore = score; best = id; }
+  }
+  return best;
+}
+
 /** A seat's own configurable policy; local modules may return an intent, {action, reason}, null or a generator. */
 export function* decideSteps(m, ps, { advice = false } = {}) {
   const observation = freeze(observe(m, ps.playerId));
-  const config = freeze(clone(checkAIConfig(ps.aiConfig) ? ps.aiConfig : AI_DEFAULT));
+  const rawConfig = clone(checkAIConfig(ps.aiConfig) ? ps.aiConfig : AI_DEFAULT);
+  if (rawConfig.policy === 'global' && rawConfig.autoCore && !rawConfig.coreBondId && observation.public.phase === PHASE.PREP) {
+    const picked = autoCoreBond(m, ps);
+    if (picked) {
+      rawConfig.coreBondId = picked;
+      if (!advice) ps.aiConfig = { ...ps.aiConfig, coreBondId: picked };
+    }
+  }
+  const config = freeze(rawConfig);
   const memory = advice ? clone(ps.aiMemory || {}) : (ps.aiMemory ||= {});
   let base;
   const baseline = () => { if (base === undefined) base = baselineAction(m, ps.playerId); return base ? clone(base) : null; };
@@ -72,9 +101,17 @@ export function* decideSteps(m, ps, { advice = false } = {}) {
       if (preferred) result = { action: preferred, reason: '按你的策略与干员偏好选择', policy: config.policy };
       else if (config.policy === 'search' || config.policy === 'global' || (coreShopping && advice)) {
         const key = `${observation.public.phase}:${observation.public.round}`;
-        if (!advice && memory.searchTurn === key) return { action: null, reason: '本阶段搜索完成，委托内置 AI', policy: 'search' };
+        const maxActions = config.policy === 'global' ? (config.search?.maxActions || 8) : 1;
+        if (!advice && config.policy === 'global' && memory.globalActionsKey === key && (memory.globalActions || 0) >= maxActions) {
+          return { action: null, reason: `本休整期已完成 ${maxActions} 次全局规划，交回内置 AI`, policy: 'global' };
+        }
+        if (!advice && config.policy !== 'global' && memory.searchTurn === key) return { action: null, reason: '本阶段搜索完成，委托内置 AI', policy: 'search' };
         result = yield* searchSteps(context);
-        if (!advice) memory.searchTurn = key;
+        if (!advice && config.policy !== 'global') memory.searchTurn = key;
+        if (!advice && config.policy === 'global' && result?.action) {
+          if (memory.globalActionsKey !== key) { memory.globalActionsKey = key; memory.globalActions = 0; }
+          memory.globalActions++;
+        }
       } else result = { action: advice ? baseline() : null, reason: '内置 AI 根据经济、羁绊、敌人路线与阵容选择', policy: config.policy };
     }
     if (observe(m, ps.playerId).modelKey !== observation.modelKey) return { action: null, reason: '状态已变化，委托内置 AI', policy: config.policy };
